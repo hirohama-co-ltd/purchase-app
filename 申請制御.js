@@ -39,6 +39,31 @@ function normalizePurchaseDetails_(details) {
   });
 }
 
+function normalizePurchasePayloadNames_(payload) {
+  var errors = [];
+  var pending = [];
+  var supplier = resolveSupplierName_(payload.supplier);
+  if (!supplier.success) errors.push(supplier.message);
+  else {
+    payload.supplier = supplier.value;
+    if (supplier.unregistered) {
+      pending.push({ type: '購入先', inputName: supplier.inputName, lineNo: 0 });
+    }
+  }
+
+  (payload.details || []).forEach(function(d, index) {
+    var maker = resolveMakerName_(d.maker);
+    if (!maker.success) errors.push('明細' + (index + 1) + ': ' + maker.message);
+    else {
+      d.maker = maker.value;
+      if (maker.unregistered) {
+        pending.push({ type: 'メーカー', inputName: maker.inputName, lineNo: index + 1 });
+      }
+    }
+  });
+  return { errors: errors, pending: pending };
+}
+
 function summarizePurchaseItems_(details) {
   if (!details || !details.length) return '';
   if (details.length === 1) return details[0].itemName;
@@ -53,6 +78,9 @@ function savePurchaseRequest(payload, submit) {
   var employee = findEmployeeByEmail(userEmail);
   var isSubmit = submit === true;
   if (isSubmit && !employee) return { success: false, message: '共通マスタの社員マスタに登録されていません。' };
+
+  var nameResult = normalizePurchasePayloadNames_(payload);
+  if (nameResult.errors.length > 0) return { success: false, message: nameResult.errors.join('\n') };
 
   var errors = validatePurchasePayload_(payload, isSubmit);
   if (errors.length > 0) return { success: false, message: errors.join('\n') };
@@ -92,6 +120,8 @@ function savePurchaseRequest(payload, submit) {
     budgetCategory: String(payload.budgetCategory || '').trim(),
     paymentMethod: String(payload.paymentMethod || '').trim(),
     note: String(payload.note || ''),
+    masterStatus: nameResult.pending.length ? PURCHASE_MASTER_STATUS.PENDING : PURCHASE_MASTER_STATUS.REGISTERED,
+    unregisteredMasterCount: nameResult.pending.length,
     status: isSubmit ? PURCHASE_STATUS.SUBMITTED : PURCHASE_STATUS.DRAFT,
     approverEmail: isSubmit ? wf.approverEmail : (existing ? existing.approverEmail : ''),
     approvedAt: isSubmit ? '' : (existing ? existing.approvedAt : ''),
@@ -105,11 +135,13 @@ function savePurchaseRequest(payload, submit) {
 
   writePurchaseRow_(purchase);
   writePurchaseDetails_(purchaseRequestId, details);
+  recordUnregisteredMasterCandidates_(purchaseRequestId, nameResult.pending);
   appendHistory_(purchaseRequestId, isSubmit ? '申請' : '下書き保存', '');
   return {
     success: true,
     purchaseRequestId: purchaseRequestId,
-    message: isSubmit ? '購買申請を提出しました。' : '下書きを保存しました。',
+    message: (isSubmit ? '購買申請を提出しました。' : '下書きを保存しました。') +
+      (nameResult.pending.length ? '\n\n※未登録の購入先・メーカーがあります。承認後、管理者が正式登録します。' : ''),
     purchase: buildPurchaseRequest_(purchaseRequestId)
   };
 }

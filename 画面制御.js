@@ -1,6 +1,7 @@
 function doGet(e) {
   var template = HtmlService.createTemplateFromFile('index');
   template.requestId = (e && e.parameter && e.parameter.requestId) || '';
+  template.adminView = (e && e.parameter && e.parameter.admin) || '';
   template.portalUrl = PORTAL_URL;
   return template
     .evaluate()
@@ -30,9 +31,11 @@ function getBootstrapAppData() {
   return {
     userEmail: userEmail,
     employee: employee,
+    isMasterAdmin: isPurchaseMasterAdmin_(userEmail),
     workflowRoutes: getAvailableWorkflowRoutes(),
     workflowLinked: isWorkflowLinked_(),
-    statusLabels: PURCHASE_STATUS
+    statusLabels: PURCHASE_STATUS,
+    purchaseMasters: getPurchaseMasterCandidates()
   };
 }
 
@@ -49,4 +52,34 @@ function getSubmitReadinessApi() {
 
 function previewPurchaseWorkflowRouteApi(routeId, applicantEmail) {
   return previewWorkflowRoute_(routeId, applicantEmail || getCurrentUserEmail_());
+}
+
+function lookupPurchaseDetailByModelApi(modelNumber, excludePurchaseRequestId) {
+  return getPurchaseDetailHistoryByModel_(modelNumber, excludePurchaseRequestId);
+}
+
+function getPendingPurchaseMasterCandidatesApi() {
+  var userEmail = getCurrentUserEmail_();
+  if (!isPurchaseMasterAdmin_(userEmail)) {
+    return { success: false, message: '未登録マスタ管理の権限がありません。', candidates: [] };
+  }
+  return { success: true, candidates: getOpenUnregisteredMasterCandidates_() };
+}
+
+function registerPendingPurchaseMasterCandidatesApi(updates) {
+  var userEmail = getCurrentUserEmail_();
+  if (!isPurchaseMasterAdmin_(userEmail)) {
+    return { success: false, message: '未登録マスタ管理の権限がありません。' };
+  }
+  updates = updates || [];
+  if (!updates.length) return { success: false, message: '登録対象がありません。' };
+  updateUnregisteredMasterCandidateInputs_(updates);
+  var ids = updates.map(function(u) { return String(u.candidateId || '').trim(); }).filter(function(id) { return !!id; });
+  var message = registerPendingPurchaseMasters(ids);
+  return {
+    success: true,
+    message: message,
+    candidates: getOpenUnregisteredMasterCandidates_(),
+    purchaseMasters: getPurchaseMasterCandidates()
+  };
 }

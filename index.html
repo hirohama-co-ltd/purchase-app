@@ -57,17 +57,25 @@
     .detail-header { font-size: 11px; font-weight: bold; color: #64748b; padding: 0 4px 4px; }
     .line-card { border: 1px solid #fed7aa; border-radius: 8px; padding: 6px; margin-bottom: 6px; background: #fffaf0; }
     .line-card input { width: 100%; padding: 6px 8px; font-size: 13px; }
+    .price-history { font-size: 11px; color: #64748b; margin: 4px 2px 0; min-width: 980px; }
     .line-btn { width: 30px; height: 30px; border-radius: 999px; border: none; color: #fff; font-weight: bold; cursor: pointer; line-height: 1; }
     .line-btn-add { background: #b45309; }
     .line-btn-delete { background: #dc2626; }
     .hint, .submit-warning { font-size: 12px; color: #64748b; margin-bottom: 8px; }
     .submit-warning { color: #92400e; background: #fffbeb; padding: 10px 12px; border-radius: 6px; border: 1px solid #fcd34d; white-space: pre-wrap; display: none; }
     .badge-count { background: #ef4444; color: #fff; font-size: 10px; padding: 2px 6px; border-radius: 10px; margin-left: 4px; }
+    .admin-list { display: flex; flex-direction: column; gap: 10px; margin-top: 12px; }
+    .admin-card { border: 1px solid #fed7aa; border-radius: 8px; padding: 12px; background: #fffaf0; }
+    .admin-card-header { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; font-size: 12px; color: #64748b; }
+    .admin-grid { display: grid; grid-template-columns: 1fr 1fr 1.3fr auto; gap: 8px; align-items: end; }
+    @media (max-width: 760px) { .admin-grid { grid-template-columns: 1fr; } }
   </style>
 </head>
 <body>
 <div id="loading" class="loading">読み込み中...</div>
 <div id="toast" class="toast"></div>
+<datalist id="supplierCandidates"></datalist>
+<datalist id="makerCandidates"></datalist>
 
 <div class="header">
   <button class="btn btn-secondary btn-sm" style="float:right" onclick="goToPortal()">申請ポータルに戻る</button>
@@ -79,6 +87,7 @@
   <button class="tab-btn active" data-tab="form">新規申請</button>
   <button class="tab-btn" data-tab="list">申請一覧</button>
   <button class="tab-btn" data-tab="approval">承認待ち<span class="badge-count" id="pendingCount" style="display:none">0</span></button>
+  <button class="tab-btn" data-tab="admin" id="adminTab" style="display:none">未登録マスタ<span class="badge-count" id="adminPendingCount" style="display:none">0</span></button>
 </div>
 
 <div id="panel-form" class="panel active">
@@ -90,7 +99,7 @@
   </div>
   <div class="form-grid">
     <div class="field"><label>希望納期</label><input type="date" id="desiredDate"></div>
-    <div class="field"><label>購入先</label><input type="text" id="supplier" placeholder="例：〇〇商事"></div>
+    <div class="field"><label>購入先</label><input type="text" id="supplier" list="supplierCandidates" placeholder="候補から選択または入力"></div>
     <div class="field"><label>合計金額（円）</label><input type="number" id="totalAmount" min="0" placeholder="0"></div>
     <div class="field"><label>予算区分</label><input type="text" id="budgetCategory" placeholder="例：消耗品費"></div>
     <div class="field"><label>支払方法</label><input type="text" id="paymentMethod" placeholder="例：請求書払い"></div>
@@ -126,6 +135,12 @@
   <div id="pendingList" class="item-list" style="margin-top:12px"></div>
 </div>
 
+<div id="panel-admin" class="panel">
+  <p class="hint">未登録の購入先・メーカーを正式マスタに登録します。正式表示名を入力して登録すると、関連する購買申請・明細の履歴も正式名に更新されます。</p>
+  <button class="btn btn-secondary btn-sm" onclick="loadPendingMasterCandidates()">更新</button>
+  <div id="adminMasterList" class="admin-list"></div>
+</div>
+
 <div id="detailModal" class="modal-overlay" onclick="if(event.target===this)closeModal()">
   <div class="modal">
     <h3 id="modalTitle">詳細</h3>
@@ -138,6 +153,7 @@
 <script>
   var PORTAL_URL = '<?= portalUrl ?>';
   var BOOT_REQUEST_ID = '<?= requestId ?>';
+  var BOOT_ADMIN_VIEW = '<?= adminView ?>';
   var appData = null, currentPurchase = null;
 
   document.addEventListener('DOMContentLoaded', function() {
@@ -150,9 +166,16 @@
     document.getElementById('userInfo').textContent = (data.employee ? data.employee.name + ' / ' : '') + (data.userEmail || '');
     bindTabs();
     setupWorkflowRoutes(data.workflowRoutes, data.workflowLinked);
+    setupPurchaseMasterCandidates(data.purchaseMasters);
+    setupAdminTab(data.isMasterAdmin);
     resetForm();
     loadSubmitReadiness();
     loadPurchaseLists();
+    if (data.isMasterAdmin) loadPendingMasterCandidates();
+    if (data.isMasterAdmin && BOOT_ADMIN_VIEW === 'masters') {
+      document.querySelector('[data-tab="admin"]').click();
+      return;
+    }
     if (BOOT_REQUEST_ID) openPurchase(BOOT_REQUEST_ID, 'mine');
   }
 
@@ -164,9 +187,14 @@
         document.querySelectorAll('.panel').forEach(function(p) { p.classList.remove('active'); });
         btn.classList.add('active');
         document.getElementById('panel-' + tab).classList.add('active');
+        if (tab === 'admin') loadPendingMasterCandidates();
         if (tab !== 'form') loadPurchaseLists();
       };
     });
+  }
+
+  function setupAdminTab(isAdmin) {
+    document.getElementById('adminTab').style.display = isAdmin ? '' : 'none';
   }
 
   function setupWorkflowRoutes(routes, linked) {
@@ -176,6 +204,16 @@
     wrap.style.display = '';
     sel.innerHTML = routes.map(function(r) {
       return '<option value="' + esc(r.routeId) + '">' + esc(r.routeName) + (r.isDefault ? '（既定）' : '') + '</option>';
+    }).join('');
+  }
+
+  function setupPurchaseMasterCandidates(masters) {
+    masters = masters || {};
+    document.getElementById('supplierCandidates').innerHTML = (masters.suppliers || []).map(function(name) {
+      return '<option value="' + escAttr(name) + '"></option>';
+    }).join('');
+    document.getElementById('makerCandidates').innerHTML = (masters.makers || []).map(function(name) {
+      return '<option value="' + escAttr(name) + '"></option>';
     }).join('');
   }
 
@@ -198,6 +236,69 @@
     }).withFailureHandler(onError).getPurchaseListAppData();
   }
 
+  function loadPendingMasterCandidates() {
+    if (!appData || !appData.isMasterAdmin) return;
+    google.script.run.withSuccessHandler(function(res) {
+      if (!res.success) { toast(res.message, true); return; }
+      appData.pendingMasters = res.candidates || [];
+      renderPendingMasterCandidates(appData.pendingMasters);
+      updateAdminPendingBadge(appData.pendingMasters.length);
+    }).withFailureHandler(onError).getPendingPurchaseMasterCandidatesApi();
+  }
+
+  function renderPendingMasterCandidates(items) {
+    var el = document.getElementById('adminMasterList');
+    if (!items || !items.length) {
+      el.innerHTML = '<div class="empty-msg">未登録マスタ候補はありません</div>';
+      return;
+    }
+    el.innerHTML = items.map(function(c) {
+      return '<div class="admin-card" data-id="' + escAttr(c.candidateId) + '">' +
+        '<div class="admin-card-header">' +
+        '<div><strong>' + esc(c.type) + '</strong> 入力名: ' + esc(c.inputName) + '</div>' +
+        '<div>申請ID: ' + esc(c.purchaseRequestId || '-') + (c.lineNo ? ' / 行No: ' + esc(c.lineNo) : '') + '</div>' +
+        '</div>' +
+        '<div class="admin-grid">' +
+        '<div class="field"><label>正式表示名</label><input type="text" class="admin-official" value="' + escAttr(c.officialName || c.inputName) + '"></div>' +
+        '<div class="field"><label>コード</label><input type="text" class="admin-code" value="' + escAttr(c.code || '') + '"></div>' +
+        '<div class="field"><label>別名</label><input type="text" class="admin-aliases" value="' + escAttr(c.aliases || c.inputName) + '"></div>' +
+        '<button class="btn btn-success btn-sm" onclick="registerOnePendingMaster(this)">正式登録</button>' +
+        '</div></div>';
+    }).join('');
+  }
+
+  function collectPendingMasterUpdate(card) {
+    return {
+      candidateId: card.getAttribute('data-id'),
+      officialName: card.querySelector('.admin-official').value,
+      code: card.querySelector('.admin-code').value,
+      aliases: card.querySelector('.admin-aliases').value
+    };
+  }
+
+  function registerOnePendingMaster(btn) {
+    var card = btn.closest('.admin-card');
+    var update = collectPendingMasterUpdate(card);
+    if (!String(update.officialName || '').trim()) {
+      toast('正式表示名を入力してください。', true);
+      return;
+    }
+    if (!confirm('この候補を正式マスタに登録しますか？')) return;
+    showLoading(true);
+    google.script.run.withSuccessHandler(afterMasterRegister).withFailureHandler(onError).registerPendingPurchaseMasterCandidatesApi([update]);
+  }
+
+  function afterMasterRegister(res) {
+    showLoading(false);
+    toast(res.message, !res.success, res.success);
+    if (!res.success) return;
+    if (res.purchaseMasters) setupPurchaseMasterCandidates(res.purchaseMasters);
+    appData.pendingMasters = res.candidates || [];
+    renderPendingMasterCandidates(appData.pendingMasters);
+    updateAdminPendingBadge(appData.pendingMasters.length);
+    loadPurchaseLists();
+  }
+
   function recalcTotal() {
     var total = 0;
     document.querySelectorAll('.line-card').forEach(function(card) {
@@ -217,7 +318,7 @@
     card.className = 'line-card';
     card.innerHTML =
       '<div class="detail-row">' +
-      '<input type="text" class="detail-maker" placeholder="メーカー" value="' + escAttr(detail.maker || '') + '">' +
+      '<input type="text" class="detail-maker" list="makerCandidates" placeholder="メーカー" value="' + escAttr(detail.maker || '') + '">' +
       '<input type="text" class="detail-model" placeholder="品番" value="' + escAttr(detail.modelNumber || '') + '">' +
       '<input type="text" class="detail-name" placeholder="品名" value="' + escAttr(detail.itemName || '') + '">' +
       '<input type="number" min="1" class="detail-quantity" placeholder="数量" value="' + escAttr(detail.quantity || 1) + '">' +
@@ -234,6 +335,9 @@
     }
     card.querySelector('.detail-quantity').oninput = recalcTotal;
     card.querySelector('.detail-unit-price').oninput = recalcTotal;
+    card.querySelector('.detail-model').onchange = function() {
+      lookupModelHistory(card);
+    };
     card.querySelector('.line-btn-add').onclick = function() {
       addDetailLine({}, card);
     };
@@ -246,6 +350,41 @@
       recalcTotal();
     };
     recalcTotal();
+    if (detail.modelNumber) lookupModelHistory(card);
+  }
+
+  function lookupModelHistory(card) {
+    var model = card.querySelector('.detail-model').value;
+    if (!String(model || '').trim()) return;
+    var currentId = document.getElementById('editPurchaseId').value;
+    google.script.run.withSuccessHandler(function(res) {
+      renderModelHistory(card, res);
+    }).withFailureHandler(function() {}).lookupPurchaseDetailByModelApi(model, currentId);
+  }
+
+  function renderModelHistory(card, res) {
+    var old = card.querySelector('.price-history');
+    if (old) old.remove();
+    if (!res || !res.found || !res.latest) return;
+
+    var latest = res.latest;
+    if (!card.querySelector('.detail-name').value && latest.itemName) {
+      card.querySelector('.detail-name').value = latest.itemName;
+    }
+    if (!card.querySelector('.detail-maker').value && latest.maker) {
+      card.querySelector('.detail-maker').value = latest.maker;
+    }
+    if (!card.querySelector('.detail-unit-price').value && latest.unitPrice) {
+      card.querySelector('.detail-unit-price').value = latest.unitPrice;
+      recalcTotal();
+    }
+
+    var line = document.createElement('div');
+    line.className = 'price-history';
+    line.textContent = '過去単価: ' + (res.history || []).map(function(h) {
+      return (h.requestDate || '-') + ' ' + Number(h.unitPrice || 0).toLocaleString() + '円' + (h.supplier ? ' / ' + h.supplier : '');
+    }).join(' ｜ ');
+    card.appendChild(line);
   }
 
   function collectDetails() {
@@ -317,8 +456,9 @@
     var el = document.getElementById(containerId);
     if (!items || !items.length) { el.innerHTML = '<div class="empty-msg">該当する申請がありません</div>'; return; }
     el.innerHTML = items.map(function(p) {
+      var masterBadge = p.masterStatus === 'マスタ未登録あり' ? ' <span class="status-badge status-差戻し">マスタ未登録あり</span>' : '';
       return '<div class="item-card" data-id="' + escAttr(p.purchaseRequestId) + '" data-mode="' + escAttr(mode) + '">' +
-        '<div><strong>' + esc(p.itemName) + '</strong> <span class="status-badge status-' + esc(p.status) + '">' + esc(p.status) + '</span></div>' +
+        '<div><strong>' + esc(p.itemName) + '</strong> <span class="status-badge status-' + esc(p.status) + '">' + esc(p.status) + '</span>' + masterBadge + '</div>' +
         '<div style="font-size:12px;color:#64748b;margin-top:4px">' + esc(p.purchaseRequestId) + ' / 希望納期 ' + esc(p.desiredDate) +
         ' / ' + Number(p.totalAmount || 0).toLocaleString() + '円</div></div>';
     }).join('');
@@ -352,6 +492,7 @@
     }
     document.getElementById('modalBody').innerHTML = '<table class="detail-table">' +
       row('ステータス', p.status) + row('申請者', p.applicantName + ' (' + p.applicantEmail + ')') +
+      row('マスタ登録状態', p.masterStatus || '登録済') +
       row('希望納期', p.desiredDate) + row('購入先', p.supplier || '-') + row('品名', p.itemName) +
       row('合計', Number(p.totalAmount || 0).toLocaleString() + ' 円') + row('目的', p.purpose) +
       row('予算区分', p.budgetCategory || '-') + row('支払方法', p.paymentMethod || '-') + row('備考', p.note || '-') + '</table>' + detailsHtml;
@@ -409,6 +550,7 @@
   function closeModal() { document.getElementById('detailModal').classList.remove('show'); currentPurchase = null; }
   function goToPortal() { if (PORTAL_URL && PORTAL_URL.indexOf('http') === 0) window.top.location.href = PORTAL_URL; }
   function updatePendingBadge(n) { var el = document.getElementById('pendingCount'); el.style.display = n > 0 ? '' : 'none'; el.textContent = n; }
+  function updateAdminPendingBadge(n) { var el = document.getElementById('adminPendingCount'); el.style.display = n > 0 ? '' : 'none'; el.textContent = n; }
   function showLoading(s) { document.getElementById('loading').style.display = s ? 'flex' : 'none'; }
   function toast(msg, err, ok) { var el = document.getElementById('toast'); el.textContent = msg; el.className = 'toast' + (err ? ' error' : ok ? ' success' : ''); el.style.display = 'block'; setTimeout(function() { el.style.display = 'none'; }, 4000); }
   function onError(e) { showLoading(false); toast('エラー: ' + (e.message || e), true); }
