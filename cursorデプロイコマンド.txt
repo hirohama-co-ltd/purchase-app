@@ -1,0 +1,40 @@
+【初回セットアップ】
+cd "\\hinkan-nas\Hinkan-NAS\製造課（削除禁止）\GASアプリ\購買申請"
+
+1. .clasp.json の scriptId が空の場合、以下のどちらかで設定
+
+【新規作成】
+Rename-Item .clasp.json .clasp.json.bak
+clasp create --type sheets --title "購買申請"
+
+【既存スプレッドシートへ紐づけ】
+Apps Script の Script ID を .clasp.json に設定
+
+2. 初回アップロード
+clasp push
+
+3. スプレッドシートで メニュー「購買申請」→「全シート＋ヘッダーを一括作成」
+
+4. ワークフロー設定
+ワークフロー設定の「アプリ別利用設定」に以下を登録
+APP_CODE: PURCHASE_REQUEST
+
+5. Webアプリとしてデプロイ
+clasp deploy --description "購買申請 初回デプロイ"
+
+6. 申請ポータル連携
+ワークフロー設定の「ポータル連携」で以下を登録
+アプリコード: PURCHASE_REQUEST
+アプリ名: 購買申請
+データ種別: purchase
+ssId: 購買申請スプレッドシートID
+Web URL: デプロイURL
+
+【更新】
+clasp push
+clasp deploy -i AKfycbz6_wkmOhXz2JsEhjgfeDyaDoHNEZNFUrPoIIpBfFDmjKkbTT9IKeR0pwsIHSZ5dRu7kw -d "変更内容"
+
+【作成済み情報】
+スプレッドシートID: 1kiMCCvKu3-Iu4nACJ6BCegvbNoLemgZ1HuJ_-1QoxDg
+Script ID: 1A-537L7DX-jFoDgghT8cc0RFxpFCgtuWsaOkmovwojfkfAkx518LiJ-p
+WebアプリURL: https://script.google.com/macros/s/AKfycbz6_wkmOhXz2JsEhjgfeDyaDoHNEZNFUrPoIIpBfFDmjKkbTT9IKeR0pwsIHSZ5dRu7kw/exec

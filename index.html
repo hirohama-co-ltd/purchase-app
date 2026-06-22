@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    * { box-sizing: border-box; }
+    body { font-family: 'Helvetica Neue', Arial, sans-serif; background: #f1f5f9; margin: 0; padding: 10px; color: #1e293b; }
+    .header { background: #b45309; color: #fff; padding: 12px 16px; border-radius: 8px 8px 0 0; }
+    .header h1 { margin: 0 0 4px 0; font-size: 1.1rem; }
+    .user-info { font-size: 12px; opacity: 0.9; }
+    .tabs { display: flex; background: #d97706; padding: 4px; gap: 4px; border-radius: 0 0 8px 8px; margin-bottom: 12px; }
+    .tab-btn { flex: 1; border: none; background: transparent; color: #fef3c7; padding: 10px; font-size: 13px; font-weight: bold; border-radius: 6px; cursor: pointer; }
+    .tab-btn.active { background: #fff; color: #92400e; }
+    .panel { display: none; background: #fff; border-radius: 8px; padding: 16px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
+    .panel.active { display: block; }
+    .section-title { font-size: 14px; font-weight: bold; color: #b45309; border-left: 4px solid #d97706; padding-left: 8px; margin: 16px 0 10px; }
+    .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    @media (max-width: 600px) { .form-grid { grid-template-columns: 1fr; } }
+    .field { display: flex; flex-direction: column; gap: 4px; }
+    .field.full { grid-column: 1 / -1; }
+    label { font-size: 12px; font-weight: bold; color: #475569; }
+    input, select, textarea { padding: 8px 10px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 14px; }
+    textarea { min-height: 60px; }
+    .btn-row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 16px; }
+    .btn { border: none; padding: 12px 16px; border-radius: 6px; font-size: 14px; font-weight: bold; cursor: pointer; }
+    .btn-primary { background: #b45309; color: #fff; flex: 1; }
+    .btn-secondary { background: #64748b; color: #fff; }
+    .btn-success { background: #059669; color: #fff; }
+    .btn-danger { background: #dc2626; color: #fff; }
+    .btn-sm { padding: 6px 10px; font-size: 12px; }
+    .item-list { display: flex; flex-direction: column; gap: 8px; }
+    .item-card { border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px; cursor: pointer; }
+    .item-card:hover { background: #fffbeb; }
+    .status-badge { display: inline-block; padding: 3px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; }
+    .status-下書き { background: #e2e8f0; color: #475569; }
+    .status-申請中 { background: #dbeafe; color: #1d4ed8; }
+    .status-承認済 { background: #d1fae5; color: #065f46; }
+    .status-差戻し { background: #fee2e2; color: #991b1b; }
+    .status-取り下げ, .status-取消 { background: #f1f5f9; color: #64748b; }
+    .loading { position: fixed; inset: 0; background: rgba(255,255,255,0.85); display: flex; align-items: center; justify-content: center; font-weight: bold; color: #b45309; z-index: 100; }
+    .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: #1e293b; color: #fff; padding: 12px 20px; border-radius: 8px; z-index: 200; display: none; max-width: 90%; }
+    .toast.error { background: #dc2626; }
+    .toast.success { background: #059669; }
+    .empty-msg { text-align: center; color: #94a3b8; padding: 24px; }
+    .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 150; align-items: center; justify-content: center; padding: 16px; }
+    .modal-overlay.show { display: flex; }
+    .modal { background: #fff; border-radius: 8px; padding: 20px; width: 100%; max-width: 460px; max-height: 90vh; overflow-y: auto; }
+    .detail-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .detail-table th, .detail-table td { border: 1px solid #e2e8f0; padding: 6px 8px; text-align: left; }
+    .detail-table th { background: #f8fafc; width: 35%; }
+    .section-title-row { display: flex; align-items: center; gap: 8px; margin: 16px 0 10px; }
+    .section-title-row .section-title { margin: 0; }
+    .detail-lines-wrap { overflow-x: auto; padding-bottom: 2px; }
+    .detail-row { display: grid; grid-template-columns: 1.1fr 1.1fr 2fr 0.7fr 1fr 1fr 1.5fr 34px 34px; gap: 6px; align-items: center; min-width: 980px; }
+    .detail-header { font-size: 11px; font-weight: bold; color: #64748b; padding: 0 4px 4px; }
+    .line-card { border: 1px solid #fed7aa; border-radius: 8px; padding: 6px; margin-bottom: 6px; background: #fffaf0; }
+    .line-card input { width: 100%; padding: 6px 8px; font-size: 13px; }
+    .line-btn { width: 30px; height: 30px; border-radius: 999px; border: none; color: #fff; font-weight: bold; cursor: pointer; line-height: 1; }
+    .line-btn-add { background: #b45309; }
+    .line-btn-delete { background: #dc2626; }
+    .hint, .submit-warning { font-size: 12px; color: #64748b; margin-bottom: 8px; }
+    .submit-warning { color: #92400e; background: #fffbeb; padding: 10px 12px; border-radius: 6px; border: 1px solid #fcd34d; white-space: pre-wrap; display: none; }
+    .badge-count { background: #ef4444; color: #fff; font-size: 10px; padding: 2px 6px; border-radius: 10px; margin-left: 4px; }
+  </style>
+</head>
+<body>
+<div id="loading" class="loading">読み込み中...</div>
+<div id="toast" class="toast"></div>
+
+<div class="header">
+  <button class="btn btn-secondary btn-sm" style="float:right" onclick="goToPortal()">申請ポータルに戻る</button>
+  <h1>購買申請</h1>
+  <div class="user-info" id="userInfo">-</div>
+</div>
+
+<div class="tabs">
+  <button class="tab-btn active" data-tab="form">新規申請</button>
+  <button class="tab-btn" data-tab="list">申請一覧</button>
+  <button class="tab-btn" data-tab="approval">承認待ち<span class="badge-count" id="pendingCount" style="display:none">0</span></button>
+</div>
+
+<div id="panel-form" class="panel active">
+  <p class="hint">購買前に申請・承認を行います。</p>
+  <div id="submitWarning" class="submit-warning"></div>
+  <div class="section-title">購買内容</div>
+  <div class="form-grid" id="routeField" style="display:none">
+    <div class="field full"><label>申請経路</label><select id="routeId"></select></div>
+  </div>
+  <div class="form-grid">
+    <div class="field"><label>希望納期</label><input type="date" id="desiredDate"></div>
+    <div class="field"><label>購入先</label><input type="text" id="supplier" placeholder="例：〇〇商事"></div>
+    <div class="field"><label>合計金額（円）</label><input type="number" id="totalAmount" min="0" placeholder="0"></div>
+    <div class="field"><label>予算区分</label><input type="text" id="budgetCategory" placeholder="例：消耗品費"></div>
+    <div class="field"><label>支払方法</label><input type="text" id="paymentMethod" placeholder="例：請求書払い"></div>
+    <div class="field full"><label>購買目的</label><input type="text" id="purpose" placeholder="例：設備修理のため"></div>
+    <div class="field full"><label>備考</label><textarea id="note"></textarea></div>
+  </div>
+  <div class="section-title-row">
+    <div class="section-title">購買明細</div>
+    <button class="line-btn line-btn-add" type="button" onclick="addDetailLine()" title="明細を追加">＋</button>
+  </div>
+  <p class="hint">購入先1か所に対して、複数の品物を登録できます。合計金額は明細から自動計算されます。</p>
+  <div class="detail-lines-wrap">
+    <div class="detail-row detail-header">
+      <div>メーカー</div><div>品番</div><div>品名</div><div>数量</div><div>単価</div><div>金額</div><div>備考</div><div>追加</div><div>削除</div>
+    </div>
+    <div id="detailLines"></div>
+  </div>
+  <div class="btn-row">
+    <button class="btn btn-secondary" onclick="saveDraft()">下書き保存</button>
+    <button class="btn btn-primary" onclick="submitPurchase()">申請する</button>
+    <button class="btn btn-danger btn-sm" id="btnDelete" style="display:none" onclick="deletePurchase()">下書き削除</button>
+  </div>
+  <input type="hidden" id="editPurchaseId" value="">
+</div>
+
+<div id="panel-list" class="panel">
+  <button class="btn btn-secondary btn-sm" onclick="loadPurchaseLists()">更新</button>
+  <div id="myList" class="item-list" style="margin-top:12px"></div>
+</div>
+
+<div id="panel-approval" class="panel">
+  <button class="btn btn-secondary btn-sm" onclick="loadPurchaseLists()">更新</button>
+  <div id="pendingList" class="item-list" style="margin-top:12px"></div>
+</div>
+
+<div id="detailModal" class="modal-overlay" onclick="if(event.target===this)closeModal()">
+  <div class="modal">
+    <h3 id="modalTitle">詳細</h3>
+    <div id="modalBody"></div>
+    <div class="btn-row" id="modalActions"></div>
+    <button class="btn btn-secondary" style="width:100%" onclick="closeModal()">閉じる</button>
+  </div>
+</div>
+
+<script>
+  var PORTAL_URL = '<?= portalUrl ?>';
+  var BOOT_REQUEST_ID = '<?= requestId ?>';
+  var appData = null, currentPurchase = null;
+
+  document.addEventListener('DOMContentLoaded', function() {
+    google.script.run.withSuccessHandler(onBootstrap).withFailureHandler(onError).getBootstrapAppData();
+  });
+
+  function onBootstrap(data) {
+    appData = data;
+    document.getElementById('loading').style.display = 'none';
+    document.getElementById('userInfo').textContent = (data.employee ? data.employee.name + ' / ' : '') + (data.userEmail || '');
+    bindTabs();
+    setupWorkflowRoutes(data.workflowRoutes, data.workflowLinked);
+    resetForm();
+    loadSubmitReadiness();
+    loadPurchaseLists();
+    if (BOOT_REQUEST_ID) openPurchase(BOOT_REQUEST_ID, 'mine');
+  }
+
+  function bindTabs() {
+    document.querySelectorAll('.tab-btn').forEach(function(btn) {
+      btn.onclick = function() {
+        var tab = btn.getAttribute('data-tab');
+        document.querySelectorAll('.tab-btn').forEach(function(b) { b.classList.remove('active'); });
+        document.querySelectorAll('.panel').forEach(function(p) { p.classList.remove('active'); });
+        btn.classList.add('active');
+        document.getElementById('panel-' + tab).classList.add('active');
+        if (tab !== 'form') loadPurchaseLists();
+      };
+    });
+  }
+
+  function setupWorkflowRoutes(routes, linked) {
+    var wrap = document.getElementById('routeField');
+    var sel = document.getElementById('routeId');
+    if (!linked || !routes || !routes.length) { wrap.style.display = 'none'; return; }
+    wrap.style.display = '';
+    sel.innerHTML = routes.map(function(r) {
+      return '<option value="' + esc(r.routeId) + '">' + esc(r.routeName) + (r.isDefault ? '（既定）' : '') + '</option>';
+    }).join('');
+  }
+
+  function loadSubmitReadiness() {
+    google.script.run.withSuccessHandler(function(res) {
+      var el = document.getElementById('submitWarning');
+      if (res && res.ok) { el.style.display = 'none'; return; }
+      el.style.display = 'block';
+      el.textContent = res ? res.message : '申請準備状況を確認できません。';
+    }).withFailureHandler(function() {}).getSubmitReadinessApi();
+  }
+
+  function loadPurchaseLists() {
+    google.script.run.withSuccessHandler(function(data) {
+      appData.myPurchases = data.myPurchases || [];
+      appData.pendingApprovals = data.pendingApprovals || [];
+      renderList('myList', appData.myPurchases, 'mine');
+      renderList('pendingList', appData.pendingApprovals, 'approval');
+      updatePendingBadge(appData.pendingApprovals.length);
+    }).withFailureHandler(onError).getPurchaseListAppData();
+  }
+
+  function recalcTotal() {
+    var total = 0;
+    document.querySelectorAll('.line-card').forEach(function(card) {
+      var q = Number(card.querySelector('.detail-quantity').value || 0);
+      var u = Number(card.querySelector('.detail-unit-price').value || 0);
+      var amount = q * u;
+      card.querySelector('.detail-amount').value = amount;
+      total += amount;
+    });
+    document.getElementById('totalAmount').value = total;
+  }
+
+  function addDetailLine(detail, afterCard) {
+    detail = detail || {};
+    var wrap = document.getElementById('detailLines');
+    var card = document.createElement('div');
+    card.className = 'line-card';
+    card.innerHTML =
+      '<div class="detail-row">' +
+      '<input type="text" class="detail-maker" placeholder="メーカー" value="' + escAttr(detail.maker || '') + '">' +
+      '<input type="text" class="detail-model" placeholder="品番" value="' + escAttr(detail.modelNumber || '') + '">' +
+      '<input type="text" class="detail-name" placeholder="品名" value="' + escAttr(detail.itemName || '') + '">' +
+      '<input type="number" min="1" class="detail-quantity" placeholder="数量" value="' + escAttr(detail.quantity || 1) + '">' +
+      '<input type="number" min="0" class="detail-unit-price" placeholder="単価" value="' + escAttr(detail.unitPrice || '') + '">' +
+      '<input type="number" min="0" class="detail-amount" placeholder="金額" value="' + escAttr(detail.amount || '') + '" readonly>' +
+      '<input type="text" class="detail-note" placeholder="備考" value="' + escAttr(detail.note || '') + '">' +
+      '<button class="line-btn line-btn-add" type="button" title="この下に明細を追加">＋</button>' +
+      '<button class="line-btn line-btn-delete" type="button" title="明細を削除">×</button>' +
+      '</div>';
+    if (afterCard && afterCard.parentNode === wrap) {
+      wrap.insertBefore(card, afterCard.nextSibling);
+    } else {
+      wrap.appendChild(card);
+    }
+    card.querySelector('.detail-quantity').oninput = recalcTotal;
+    card.querySelector('.detail-unit-price').oninput = recalcTotal;
+    card.querySelector('.line-btn-add').onclick = function() {
+      addDetailLine({}, card);
+    };
+    card.querySelector('.line-btn-delete').onclick = function() {
+      if (document.querySelectorAll('.line-card').length <= 1) {
+        toast('明細は1件以上必要です。', true);
+        return;
+      }
+      card.remove();
+      recalcTotal();
+    };
+    recalcTotal();
+  }
+
+  function collectDetails() {
+    var details = [];
+    document.querySelectorAll('.line-card').forEach(function(card) {
+      details.push({
+        maker: card.querySelector('.detail-maker').value,
+        modelNumber: card.querySelector('.detail-model').value,
+        itemName: card.querySelector('.detail-name').value,
+        quantity: card.querySelector('.detail-quantity').value,
+        unitPrice: card.querySelector('.detail-unit-price').value,
+        amount: card.querySelector('.detail-amount').value,
+        note: card.querySelector('.detail-note').value
+      });
+    });
+    return details;
+  }
+
+  function collectPayload() {
+    return {
+      purchaseRequestId: document.getElementById('editPurchaseId').value,
+      desiredDate: document.getElementById('desiredDate').value,
+      supplier: document.getElementById('supplier').value,
+      totalAmount: document.getElementById('totalAmount').value,
+      purpose: document.getElementById('purpose').value,
+      budgetCategory: document.getElementById('budgetCategory').value,
+      paymentMethod: document.getElementById('paymentMethod').value,
+      note: document.getElementById('note').value,
+      routeId: document.getElementById('routeId') ? document.getElementById('routeId').value : '',
+      details: collectDetails()
+    };
+  }
+
+  function saveDraft() { savePurchase(false); }
+  function submitPurchase() { if (confirm('購買申請を提出しますか？')) savePurchase(true); }
+
+  function savePurchase(submit) {
+    showLoading(true);
+    google.script.run.withSuccessHandler(function(res) {
+      showLoading(false);
+      toast(res.message, !res.success, res.success);
+      if (res.success) { resetForm(); loadPurchaseLists(); }
+    }).withFailureHandler(onError).savePurchaseRequest(collectPayload(), submit);
+  }
+
+  function deletePurchase() {
+    var id = document.getElementById('editPurchaseId').value;
+    if (!id || !confirm('下書きを削除しますか？')) return;
+    showLoading(true);
+    google.script.run.withSuccessHandler(function(res) {
+      showLoading(false);
+      toast(res.message, !res.success, res.success);
+      if (res.success) { resetForm(); loadPurchaseLists(); }
+    }).withFailureHandler(onError).deletePurchaseRequest(id);
+  }
+
+  function resetForm() {
+    document.getElementById('editPurchaseId').value = '';
+    ['supplier','totalAmount','purpose','budgetCategory','paymentMethod','note'].forEach(function(id) {
+      document.getElementById(id).value = '';
+    });
+    document.getElementById('desiredDate').value = new Date().toISOString().slice(0, 10);
+    document.getElementById('detailLines').innerHTML = '';
+    addDetailLine();
+    document.getElementById('btnDelete').style.display = 'none';
+  }
+
+  function renderList(containerId, items, mode) {
+    var el = document.getElementById(containerId);
+    if (!items || !items.length) { el.innerHTML = '<div class="empty-msg">該当する申請がありません</div>'; return; }
+    el.innerHTML = items.map(function(p) {
+      return '<div class="item-card" data-id="' + escAttr(p.purchaseRequestId) + '" data-mode="' + escAttr(mode) + '">' +
+        '<div><strong>' + esc(p.itemName) + '</strong> <span class="status-badge status-' + esc(p.status) + '">' + esc(p.status) + '</span></div>' +
+        '<div style="font-size:12px;color:#64748b;margin-top:4px">' + esc(p.purchaseRequestId) + ' / 希望納期 ' + esc(p.desiredDate) +
+        ' / ' + Number(p.totalAmount || 0).toLocaleString() + '円</div></div>';
+    }).join('');
+    el.querySelectorAll('.item-card').forEach(function(card) {
+      card.onclick = function() {
+        openPurchase(card.getAttribute('data-id'), card.getAttribute('data-mode'));
+      };
+    });
+  }
+
+  function openPurchase(id, mode) {
+    showLoading(true);
+    google.script.run.withSuccessHandler(function(res) {
+      showLoading(false);
+      if (!res.success) { toast(res.message, true); return; }
+      currentPurchase = res.purchase;
+      showDetail(res.purchase, mode);
+    }).withFailureHandler(onError).getPurchaseRequestDetail(id);
+  }
+
+  function showDetail(p, mode) {
+    document.getElementById('modalTitle').textContent = p.purchaseRequestId;
+    var detailsHtml = '';
+    if (p.details && p.details.length) {
+      detailsHtml = '<div class="section-title" style="margin-top:12px">購買明細</div><table class="detail-table">' +
+        '<tr><th>メーカー</th><th>品番</th><th>品名</th><th>数量</th><th>金額</th></tr>' +
+        p.details.map(function(d) {
+          return '<tr><td>' + esc(d.maker || '-') + '</td><td>' + esc(d.modelNumber || '-') + '</td><td>' + esc(d.itemName || '-') +
+            '</td><td>' + esc(d.quantity || 0) + '</td><td>' + Number(d.amount || 0).toLocaleString() + ' 円</td></tr>';
+        }).join('') + '</table>';
+    }
+    document.getElementById('modalBody').innerHTML = '<table class="detail-table">' +
+      row('ステータス', p.status) + row('申請者', p.applicantName + ' (' + p.applicantEmail + ')') +
+      row('希望納期', p.desiredDate) + row('購入先', p.supplier || '-') + row('品名', p.itemName) +
+      row('合計', Number(p.totalAmount || 0).toLocaleString() + ' 円') + row('目的', p.purpose) +
+      row('予算区分', p.budgetCategory || '-') + row('支払方法', p.paymentMethod || '-') + row('備考', p.note || '-') + '</table>' + detailsHtml;
+    var actions = document.getElementById('modalActions');
+    actions.innerHTML = '';
+    if (mode === 'approval' && p.status === '申請中') {
+      actions.innerHTML = '<button class="btn btn-success" style="flex:1" onclick="approveCurrent()">承認</button>' +
+        '<button class="btn btn-danger" style="flex:1" onclick="rejectCurrent()">差戻し</button>';
+    }
+    if (mode === 'mine' && (p.status === '下書き' || p.status === '差戻し')) {
+      actions.innerHTML += '<button class="btn btn-secondary" style="flex:1" onclick="loadToForm()">編集</button>';
+    }
+    document.getElementById('detailModal').classList.add('show');
+  }
+
+  function loadToForm() {
+    var p = currentPurchase;
+    closeModal();
+    document.getElementById('editPurchaseId').value = p.purchaseRequestId;
+    document.getElementById('desiredDate').value = p.desiredDate;
+    document.getElementById('supplier').value = p.supplier;
+    document.getElementById('totalAmount').value = p.totalAmount;
+    document.getElementById('purpose').value = p.purpose;
+    document.getElementById('budgetCategory').value = p.budgetCategory;
+    document.getElementById('paymentMethod').value = p.paymentMethod;
+    document.getElementById('note').value = p.note;
+    document.getElementById('detailLines').innerHTML = '';
+    (p.details && p.details.length ? p.details : [{ itemName: p.itemName, quantity: p.quantity, unitPrice: p.unitPrice, amount: p.totalAmount }]).forEach(addDetailLine);
+    document.getElementById('btnDelete').style.display = p.status === '下書き' ? '' : 'none';
+    document.querySelector('[data-tab="form"]').click();
+  }
+
+  function approveCurrent() {
+    if (!currentPurchase || !confirm('承認しますか？')) return;
+    showLoading(true);
+    google.script.run.withSuccessHandler(afterAction).withFailureHandler(onError).approvePurchaseRequest(currentPurchase.purchaseRequestId, '');
+  }
+
+  function rejectCurrent() {
+    if (!currentPurchase) return;
+    var reason = prompt('差戻し理由');
+    if (!reason) return;
+    showLoading(true);
+    google.script.run.withSuccessHandler(afterAction).withFailureHandler(onError).rejectPurchaseRequest(currentPurchase.purchaseRequestId, reason, '');
+  }
+
+  function afterAction(res) {
+    showLoading(false);
+    closeModal();
+    toast(res.message, !res.success, res.success);
+    loadPurchaseLists();
+  }
+
+  function row(label, val) { return '<tr><th>' + esc(label) + '</th><td>' + esc(val) + '</td></tr>'; }
+  function closeModal() { document.getElementById('detailModal').classList.remove('show'); currentPurchase = null; }
+  function goToPortal() { if (PORTAL_URL && PORTAL_URL.indexOf('http') === 0) window.top.location.href = PORTAL_URL; }
+  function updatePendingBadge(n) { var el = document.getElementById('pendingCount'); el.style.display = n > 0 ? '' : 'none'; el.textContent = n; }
+  function showLoading(s) { document.getElementById('loading').style.display = s ? 'flex' : 'none'; }
+  function toast(msg, err, ok) { var el = document.getElementById('toast'); el.textContent = msg; el.className = 'toast' + (err ? ' error' : ok ? ' success' : ''); el.style.display = 'block'; setTimeout(function() { el.style.display = 'none'; }, 4000); }
+  function onError(e) { showLoading(false); toast('エラー: ' + (e.message || e), true); }
+  function esc(s) { return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+  function escAttr(s) { return esc(s).replace(/'/g, '&#39;'); }
+</script>
+</body>
+</html>
