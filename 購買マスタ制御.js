@@ -241,13 +241,58 @@ function updateUnregisteredMasterCandidateInputs_(updates) {
   return rows;
 }
 
+function mergeMasterAliasValues_(currentAliases, additionalAliases) {
+  var values = parseMultiValues_(currentAliases).concat(parseMultiValues_(additionalAliases));
+  var seen = {};
+  var merged = [];
+  values.forEach(function(value) {
+    var key = normalizeMasterKey_(value);
+    if (!key || seen[key]) return;
+    seen[key] = true;
+    merged.push(value);
+  });
+  return merged.join(',');
+}
+
 function appendNameMasterRow_(sheetName, code, officialName, aliases) {
   var sheet = getSpreadsheet_().getSheetByName(sheetName) || getSpreadsheet_().insertSheet(sheetName);
   ensureHeaders_(sheet, PURCHASE_MASTER_HEADERS);
-  var rows = loadPurchaseNameMaster_(sheetName);
-  var resolved = resolvePurchaseMasterName_(officialName, sheetName, sheetName, false);
-  if (rows.length && resolved.success && !resolved.unregistered) return;
-  sheet.appendRow([code || officialName, officialName, aliases || '', 'Y']);
+  var canonicalName = String(officialName || '').trim();
+  var additionalAliases = aliases || '';
+  var targetKey = normalizeMasterKey_(canonicalName);
+  var lastRow = sheet.getLastRow();
+
+  if (lastRow >= 2) {
+    var data = sheet.getRange(2, 1, lastRow - 1, PURCHASE_MASTER_HEADERS.length).getValues();
+    for (var i = 0; i < data.length; i++) {
+      var rowNo = i + 2;
+      var currentCode = String(data[i][0] || '').trim();
+      var currentName = String(data[i][1] || '').trim();
+      var currentAliases = String(data[i][2] || '').trim();
+      var active = String(data[i][3] || 'Y').trim();
+      if (active === 'N') continue;
+
+      var matches = normalizeMasterKey_(currentName) === targetKey || normalizeMasterKey_(currentCode) === targetKey;
+      if (!matches) {
+        var aliasValues = parseMultiValues_(currentAliases);
+        for (var j = 0; j < aliasValues.length; j++) {
+          if (normalizeMasterKey_(aliasValues[j]) === targetKey) {
+            matches = true;
+            break;
+          }
+        }
+      }
+      if (!matches) continue;
+
+      var mergedAliases = mergeMasterAliasValues_(currentAliases, additionalAliases);
+      sheet.getRange(rowNo, 3).setValue(mergedAliases);
+      if (code && !currentCode) sheet.getRange(rowNo, 1).setValue(code);
+      return currentName;
+    }
+  }
+
+  sheet.appendRow([code || canonicalName, canonicalName, additionalAliases || '', 'Y']);
+  return canonicalName;
 }
 
 function applyOfficialNameToPurchaseHistory_(candidate) {
@@ -297,7 +342,7 @@ function registerPendingPurchaseMasters(candidateIds) {
       return;
     }
     var sheetName = r.type === '購入先' ? SHEET_SUPPLIER_MASTER : SHEET_MAKER_MASTER;
-    appendNameMasterRow_(sheetName, r.code, r.officialName, r.aliases);
+    r.officialName = appendNameMasterRow_(sheetName, r.code, r.officialName, mergeMasterAliasValues_(r.inputName, r.aliases));
     applyOfficialNameToPurchaseHistory_(r);
     r.status = '登録済';
     r.registeredAt = now;

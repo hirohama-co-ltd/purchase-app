@@ -92,17 +92,28 @@ function purchaseRowToValues_(r) {
   ];
 }
 
+function findSheetRowByFirstColumnId_(sheet, id) {
+  var lastRow = sheet.getLastRow();
+  if (lastRow < 2) return -1;
+  var ids = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
+  var target = String(id || '').trim();
+  for (var i = 0; i < ids.length; i++) {
+    if (String(ids[i][0] || '').trim() === target) return i + 2;
+  }
+  return -1;
+}
+
 function writePurchaseRow_(purchase) {
   var sheet = getSpreadsheet_().getSheetByName(SHEET_PURCHASES) || getSpreadsheet_().insertSheet(SHEET_PURCHASES);
   ensureHeaders_(sheet, PURCHASE_HEADERS);
-  var all = readPurchaseRows_();
-  var idx = -1;
-  for (var i = 0; i < all.length; i++) {
-    if (all[i].purchaseRequestId === purchase.purchaseRequestId) { idx = i; break; }
+  var values = purchaseRowToValues_(purchase);
+  var rowIndex = findSheetRowByFirstColumnId_(sheet, purchase.purchaseRequestId);
+  if (rowIndex > 0) {
+    sheet.getRange(rowIndex, 1, 1, PURCHASE_HEADERS.length).setValues([values]);
+    return;
   }
-  if (idx >= 0) all[idx] = purchase;
-  else all.push(purchase);
-  writeAllPurchaseRows_(sheet, all);
+  var nextRow = Math.max(sheet.getLastRow(), 1) + 1;
+  sheet.getRange(nextRow, 1, 1, PURCHASE_HEADERS.length).setValues([values]);
 }
 
 function writeAllPurchaseRows_(sheet, rows) {

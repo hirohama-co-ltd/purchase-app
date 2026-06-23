@@ -64,11 +64,6 @@
     .hint, .submit-warning { font-size: 12px; color: #64748b; margin-bottom: 8px; }
     .submit-warning { color: #92400e; background: #fffbeb; padding: 10px 12px; border-radius: 6px; border: 1px solid #fcd34d; white-space: pre-wrap; display: none; }
     .badge-count { background: #ef4444; color: #fff; font-size: 10px; padding: 2px 6px; border-radius: 10px; margin-left: 4px; }
-    .admin-list { display: flex; flex-direction: column; gap: 10px; margin-top: 12px; }
-    .admin-card { border: 1px solid #fed7aa; border-radius: 8px; padding: 12px; background: #fffaf0; }
-    .admin-card-header { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; font-size: 12px; color: #64748b; }
-    .admin-grid { display: grid; grid-template-columns: 1fr 1fr 1.3fr auto; gap: 8px; align-items: end; }
-    @media (max-width: 760px) { .admin-grid { grid-template-columns: 1fr; } }
   </style>
 </head>
 <body>
@@ -85,9 +80,6 @@
 
 <div class="tabs">
   <button class="tab-btn active" data-tab="form">新規申請</button>
-  <button class="tab-btn" data-tab="list">申請一覧</button>
-  <button class="tab-btn" data-tab="approval">承認待ち<span class="badge-count" id="pendingCount" style="display:none">0</span></button>
-  <button class="tab-btn" data-tab="admin" id="adminTab" style="display:none">未登録マスタ<span class="badge-count" id="adminPendingCount" style="display:none">0</span></button>
 </div>
 
 <div id="panel-form" class="panel active">
@@ -125,22 +117,6 @@
   <input type="hidden" id="editPurchaseId" value="">
 </div>
 
-<div id="panel-list" class="panel">
-  <button class="btn btn-secondary btn-sm" onclick="loadPurchaseLists()">更新</button>
-  <div id="myList" class="item-list" style="margin-top:12px"></div>
-</div>
-
-<div id="panel-approval" class="panel">
-  <button class="btn btn-secondary btn-sm" onclick="loadPurchaseLists()">更新</button>
-  <div id="pendingList" class="item-list" style="margin-top:12px"></div>
-</div>
-
-<div id="panel-admin" class="panel">
-  <p class="hint">未登録の購入先・メーカーを正式マスタに登録します。正式表示名を入力して登録すると、関連する購買申請・明細の履歴も正式名に更新されます。</p>
-  <button class="btn btn-secondary btn-sm" onclick="loadPendingMasterCandidates()">更新</button>
-  <div id="adminMasterList" class="admin-list"></div>
-</div>
-
 <div id="detailModal" class="modal-overlay" onclick="if(event.target===this)closeModal()">
   <div class="modal">
     <h3 id="modalTitle">詳細</h3>
@@ -153,7 +129,6 @@
 <script>
   var PORTAL_URL = '<?= portalUrl ?>';
   var BOOT_REQUEST_ID = '<?= requestId ?>';
-  var BOOT_ADMIN_VIEW = '<?= adminView ?>';
   var appData = null, currentPurchase = null;
 
   document.addEventListener('DOMContentLoaded', function() {
@@ -167,15 +142,8 @@
     bindTabs();
     setupWorkflowRoutes(data.workflowRoutes, data.workflowLinked);
     setupPurchaseMasterCandidates(data.purchaseMasters);
-    setupAdminTab(data.isMasterAdmin);
     resetForm();
     loadSubmitReadiness();
-    loadPurchaseLists();
-    if (data.isMasterAdmin) loadPendingMasterCandidates();
-    if (data.isMasterAdmin && BOOT_ADMIN_VIEW === 'masters') {
-      document.querySelector('[data-tab="admin"]').click();
-      return;
-    }
     if (BOOT_REQUEST_ID) openPurchase(BOOT_REQUEST_ID, 'mine');
   }
 
@@ -187,14 +155,8 @@
         document.querySelectorAll('.panel').forEach(function(p) { p.classList.remove('active'); });
         btn.classList.add('active');
         document.getElementById('panel-' + tab).classList.add('active');
-        if (tab === 'admin') loadPendingMasterCandidates();
-        if (tab !== 'form') loadPurchaseLists();
       };
     });
-  }
-
-  function setupAdminTab(isAdmin) {
-    document.getElementById('adminTab').style.display = isAdmin ? '' : 'none';
   }
 
   function setupWorkflowRoutes(routes, linked) {
@@ -230,74 +192,12 @@
     google.script.run.withSuccessHandler(function(data) {
       appData.myPurchases = data.myPurchases || [];
       appData.pendingApprovals = data.pendingApprovals || [];
-      renderList('myList', appData.myPurchases, 'mine');
-      renderList('pendingList', appData.pendingApprovals, 'approval');
+      if (document.getElementById('myList')) renderList('myList', appData.myPurchases, 'mine');
+      if (document.getElementById('pendingList')) renderList('pendingList', appData.pendingApprovals, 'approval');
       updatePendingBadge(appData.pendingApprovals.length);
     }).withFailureHandler(onError).getPurchaseListAppData();
   }
 
-  function loadPendingMasterCandidates() {
-    if (!appData || !appData.isMasterAdmin) return;
-    google.script.run.withSuccessHandler(function(res) {
-      if (!res.success) { toast(res.message, true); return; }
-      appData.pendingMasters = res.candidates || [];
-      renderPendingMasterCandidates(appData.pendingMasters);
-      updateAdminPendingBadge(appData.pendingMasters.length);
-    }).withFailureHandler(onError).getPendingPurchaseMasterCandidatesApi();
-  }
-
-  function renderPendingMasterCandidates(items) {
-    var el = document.getElementById('adminMasterList');
-    if (!items || !items.length) {
-      el.innerHTML = '<div class="empty-msg">未登録マスタ候補はありません</div>';
-      return;
-    }
-    el.innerHTML = items.map(function(c) {
-      return '<div class="admin-card" data-id="' + escAttr(c.candidateId) + '">' +
-        '<div class="admin-card-header">' +
-        '<div><strong>' + esc(c.type) + '</strong> 入力名: ' + esc(c.inputName) + '</div>' +
-        '<div>申請ID: ' + esc(c.purchaseRequestId || '-') + (c.lineNo ? ' / 行No: ' + esc(c.lineNo) : '') + '</div>' +
-        '</div>' +
-        '<div class="admin-grid">' +
-        '<div class="field"><label>正式表示名</label><input type="text" class="admin-official" value="' + escAttr(c.officialName || c.inputName) + '"></div>' +
-        '<div class="field"><label>コード</label><input type="text" class="admin-code" value="' + escAttr(c.code || '') + '"></div>' +
-        '<div class="field"><label>別名</label><input type="text" class="admin-aliases" value="' + escAttr(c.aliases || c.inputName) + '"></div>' +
-        '<button class="btn btn-success btn-sm" onclick="registerOnePendingMaster(this)">正式登録</button>' +
-        '</div></div>';
-    }).join('');
-  }
-
-  function collectPendingMasterUpdate(card) {
-    return {
-      candidateId: card.getAttribute('data-id'),
-      officialName: card.querySelector('.admin-official').value,
-      code: card.querySelector('.admin-code').value,
-      aliases: card.querySelector('.admin-aliases').value
-    };
-  }
-
-  function registerOnePendingMaster(btn) {
-    var card = btn.closest('.admin-card');
-    var update = collectPendingMasterUpdate(card);
-    if (!String(update.officialName || '').trim()) {
-      toast('正式表示名を入力してください。', true);
-      return;
-    }
-    if (!confirm('この候補を正式マスタに登録しますか？')) return;
-    showLoading(true);
-    google.script.run.withSuccessHandler(afterMasterRegister).withFailureHandler(onError).registerPendingPurchaseMasterCandidatesApi([update]);
-  }
-
-  function afterMasterRegister(res) {
-    showLoading(false);
-    toast(res.message, !res.success, res.success);
-    if (!res.success) return;
-    if (res.purchaseMasters) setupPurchaseMasterCandidates(res.purchaseMasters);
-    appData.pendingMasters = res.candidates || [];
-    renderPendingMasterCandidates(appData.pendingMasters);
-    updateAdminPendingBadge(appData.pendingMasters.length);
-    loadPurchaseLists();
-  }
 
   function recalcTotal() {
     var total = 0;
@@ -549,8 +449,7 @@
   function row(label, val) { return '<tr><th>' + esc(label) + '</th><td>' + esc(val) + '</td></tr>'; }
   function closeModal() { document.getElementById('detailModal').classList.remove('show'); currentPurchase = null; }
   function goToPortal() { if (PORTAL_URL && PORTAL_URL.indexOf('http') === 0) window.top.location.href = PORTAL_URL; }
-  function updatePendingBadge(n) { var el = document.getElementById('pendingCount'); el.style.display = n > 0 ? '' : 'none'; el.textContent = n; }
-  function updateAdminPendingBadge(n) { var el = document.getElementById('adminPendingCount'); el.style.display = n > 0 ? '' : 'none'; el.textContent = n; }
+  function updatePendingBadge(n) { var el = document.getElementById('pendingCount'); if (!el) return; el.style.display = n > 0 ? '' : 'none'; el.textContent = n; }
   function showLoading(s) { document.getElementById('loading').style.display = s ? 'flex' : 'none'; }
   function toast(msg, err, ok) { var el = document.getElementById('toast'); el.textContent = msg; el.className = 'toast' + (err ? ' error' : ok ? ' success' : ''); el.style.display = 'block'; setTimeout(function() { el.style.display = 'none'; }, 4000); }
   function onError(e) { showLoading(false); toast('エラー: ' + (e.message || e), true); }
