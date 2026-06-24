@@ -61,6 +61,17 @@ function headersMatch_(row, expected) {
   return true;
 }
 
+/** 2列ガイド用：各行を必ず2列に揃える（setValues エラー防止） */
+function normalizeGuideRowsTo2Cols_(rows) {
+  return rows.map(function(row) {
+    row = row || [];
+    return [
+      row[0] != null ? String(row[0]) : '',
+      row[1] != null ? String(row[1]) : ''
+    ];
+  });
+}
+
 function writeSetupGuideSheet_(ss, forceRewrite) {
   var name = 'セットアップ手順';
   var sheet = ss.getSheetByName(name);
@@ -85,7 +96,7 @@ function writeSetupGuideSheet_(ss, forceRewrite) {
     [],
     ['ステータス', '下書き / 申請中 / 承認済 / 差戻し / 取り下げ / 取消']
   ];
-  sheet.getRange(1, 1, guide.length, 2).setValues(guide);
+  sheet.getRange(1, 1, guide.length, 2).setValues(normalizeGuideRowsTo2Cols_(guide));
   sheet.getRange(1, 1, 1, 2).setFontWeight('bold').setFontSize(12);
   sheet.setColumnWidths(1, 1, 220);
   sheet.setColumnWidths(2, 1, 520);
