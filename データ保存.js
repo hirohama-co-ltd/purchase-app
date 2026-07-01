@@ -5,12 +5,13 @@
 var PURCHASE_HEADERS = [
   '購買申請ID', '申請日', '申請者Email', '申請者名', '希望納期',
   '購入先', '品名', '数量', '単価', '合計金額', '購買目的', '予算区分', '支払方法', '備考',
-  'ステータス', '承認者Email', '承認日時', '差戻し理由', '更新日時',
+  'マスタ登録状態', '未登録マスタ件数', 'ステータス', '承認者Email', '承認日時', '差戻し理由', '更新日時',
   '経路ID', '現在ステップ', '総ステップ数', '現在ステップ名'
 ];
 
 var HISTORY_HEADERS = ['購買申請ID', '操作日時', '操作者Email', '操作', 'コメント'];
 var PURCHASE_DETAIL_HEADERS = ['購買申請ID', '行No', 'メーカー', '品番', '品名', '数量', '単価', '金額', '備考'];
+var UNREGISTERED_MASTER_HEADERS = ['候補ID', '種別', '入力名', '正式表示名', 'コード', '別名', '状態', '関連申請ID', '関連行No', '更新日時', '登録日時', '処理者Email'];
 
 function getSpreadsheet_() {
   return SpreadsheetApp.getActiveSpreadsheet();
@@ -67,6 +68,8 @@ function mapPurchaseRow_(data, colMap) {
     budgetCategory: String(purchaseCell_(data, colMap, '予算区分', '')),
     paymentMethod: String(purchaseCell_(data, colMap, '支払方法', '')),
     note: String(purchaseCell_(data, colMap, '備考', '')),
+    masterStatus: String(purchaseCell_(data, colMap, 'マスタ登録状態', PURCHASE_MASTER_STATUS.REGISTERED)).trim() || PURCHASE_MASTER_STATUS.REGISTERED,
+    unregisteredMasterCount: parseInt(purchaseCell_(data, colMap, '未登録マスタ件数', 0), 10) || 0,
     status: String(purchaseCell_(data, colMap, 'ステータス', PURCHASE_STATUS.DRAFT)).trim() || PURCHASE_STATUS.DRAFT,
     approverEmail: String(purchaseCell_(data, colMap, '承認者Email', '')).trim().toLowerCase(),
     approvedAt: formatDateTime(purchaseCell_(data, colMap, '承認日時', '')),
@@ -83,22 +86,34 @@ function purchaseRowToValues_(r) {
   return [
     r.purchaseRequestId, r.requestDate, r.applicantEmail, r.applicantName, r.desiredDate,
     r.supplier, r.itemName, r.quantity, r.unitPrice, r.totalAmount, r.purpose,
-    r.budgetCategory, r.paymentMethod, r.note, r.status, r.approverEmail, r.approvedAt,
+    r.budgetCategory, r.paymentMethod, r.note, r.masterStatus || PURCHASE_MASTER_STATUS.REGISTERED,
+    r.unregisteredMasterCount || 0, r.status, r.approverEmail, r.approvedAt,
     r.rejectReason, r.updatedAt, r.routeId || '', r.currentStep || 0, r.totalSteps || 0, r.currentStepName || ''
   ];
+}
+
+function findSheetRowByFirstColumnId_(sheet, id) {
+  var lastRow = sheet.getLastRow();
+  if (lastRow < 2) return -1;
+  var ids = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
+  var target = String(id || '').trim();
+  for (var i = 0; i < ids.length; i++) {
+    if (String(ids[i][0] || '').trim() === target) return i + 2;
+  }
+  return -1;
 }
 
 function writePurchaseRow_(purchase) {
   var sheet = getSpreadsheet_().getSheetByName(SHEET_PURCHASES) || getSpreadsheet_().insertSheet(SHEET_PURCHASES);
   ensureHeaders_(sheet, PURCHASE_HEADERS);
-  var all = readPurchaseRows_();
-  var idx = -1;
-  for (var i = 0; i < all.length; i++) {
-    if (all[i].purchaseRequestId === purchase.purchaseRequestId) { idx = i; break; }
+  var values = purchaseRowToValues_(purchase);
+  var rowIndex = findSheetRowByFirstColumnId_(sheet, purchase.purchaseRequestId);
+  if (rowIndex > 0) {
+    sheet.getRange(rowIndex, 1, 1, PURCHASE_HEADERS.length).setValues([values]);
+    return;
   }
-  if (idx >= 0) all[idx] = purchase;
-  else all.push(purchase);
-  writeAllPurchaseRows_(sheet, all);
+  var nextRow = Math.max(sheet.getLastRow(), 1) + 1;
+  sheet.getRange(nextRow, 1, 1, PURCHASE_HEADERS.length).setValues([values]);
 }
 
 function writeAllPurchaseRows_(sheet, rows) {
@@ -199,6 +214,46 @@ function buildPurchaseRequestWithDetails_(purchaseRequestId) {
   if (!purchase) return null;
   purchase.details = readPurchaseDetails_(purchaseRequestId);
   return purchase;
+}
+
+function getPurchaseDetailHistoryByModel_(modelNumber, excludePurchaseRequestId) {
+  var key = String(modelNumber || '').normalize('NFKC').toLowerCase().replace(/\s/g, '').trim();
+  if (!key) return { found: false, history: [] };
+
+  var purchaseMap = {};
+  readPurchaseRows_().forEach(function(p) {
+    purchaseMap[p.purchaseRequestId] = p;
+  });
+
+  var excludeId = String(excludePurchaseRequestId || '').trim();
+  var history = readPurchaseDetails_().filter(function(d) {
+    if (excludeId && d.purchaseRequestId === excludeId) return false;
+    return String(d.modelNumber || '').normalize('NFKC').toLowerCase().replace(/\s/g, '').trim() === key;
+  }).map(function(d) {
+    var p = purchaseMap[d.purchaseRequestId] || {};
+    return {
+      purchaseRequestId: d.purchaseRequestId,
+      requestDate: p.requestDate || '',
+      desiredDate: p.desiredDate || '',
+      supplier: p.supplier || '',
+      maker: d.maker || '',
+      modelNumber: d.modelNumber || '',
+      itemName: d.itemName || '',
+      quantity: d.quantity || 0,
+      unitPrice: d.unitPrice || 0,
+      amount: d.amount || 0
+    };
+  });
+
+  history.sort(function(a, b) {
+    return (b.requestDate || '').localeCompare(a.requestDate || '');
+  });
+
+  return {
+    found: history.length > 0,
+    latest: history.length ? history[0] : null,
+    history: history.slice(0, 5)
+  };
 }
 
 function appendHistory_(purchaseRequestId, action, comment) {

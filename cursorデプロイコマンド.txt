@@ -37,4 +37,5 @@ clasp deploy -i AKfycbz6_wkmOhXz2JsEhjgfeDyaDoHNEZNFUrPoIIpBfFDmjKkbTT9IKeR0pwsI
 【作成済み情報】
 スプレッドシートID: 1kiMCCvKu3-Iu4nACJ6BCegvbNoLemgZ1HuJ_-1QoxDg
 Script ID: 1A-537L7DX-jFoDgghT8cc0RFxpFCgtuWsaOkmovwojfkfAkx518LiJ-p
+デプロイID: AKfycbz6_wkmOhXz2JsEhjgfeDyaDoHNEZNFUrPoIIpBfFDmjKkbTT9IKeR0pwsIHSZ5dRu7kw（@14）
 WebアプリURL: https://script.google.com/macros/s/AKfycbz6_wkmOhXz2JsEhjgfeDyaDoHNEZNFUrPoIIpBfFDmjKkbTT9IKeR0pwsIHSZ5dRu7kw/exec

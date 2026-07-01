@@ -21,8 +21,16 @@ var PURCHASE_STATUS = {
 
 var SHEET_PURCHASES = '購買申請一覧';
 var SHEET_PURCHASE_DETAILS = '購買明細';
+var SHEET_SUPPLIER_MASTER = '購入先マスタ';
+var SHEET_MAKER_MASTER = 'メーカーマスタ';
+var SHEET_UNREGISTERED_MASTER_CANDIDATES = '未登録マスタ候補';
 var SHEET_HISTORY = '承認履歴';
 var MASTER_CACHE_TTL_SEC = 600;
+
+var PURCHASE_MASTER_STATUS = {
+  REGISTERED: '登録済',
+  PENDING: 'マスタ未登録あり'
+};
 
 function normalizeDate(dateInput) {
   var tz = Session.getScriptTimeZone();

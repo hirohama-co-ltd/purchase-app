@@ -170,6 +170,19 @@ function wfFilterByOrg_(employees, office, department) {
   });
 }
 
+function wfIsOfficeWideApproverRole_(role) {
+  role = String(role || '').trim();
+  return role === '事業所長' || role === '工場長' || role === '所長';
+}
+
+function wfFilterByRoleOrg_(employees, office, department, role) {
+  // 事業所長などは部署ではなく、申請者と同じ事業所内のロールで解決する。
+  var effectiveDepartment = wfIsOfficeWideApproverRole_(role) ? '' : department;
+  return wfFilterByOrg_(employees, office, effectiveDepartment).filter(function(e) {
+    return employeeHasRole_(e, role);
+  });
+}
+
 function wfUniqueEmails_(employees) {
   var seen = {}, out = [];
   employees.forEach(function(e) {
@@ -204,9 +217,7 @@ function resolveWorkflowStepApprovers_(step, applicantEmail) {
   } else if (type === WF_RESOLVE_ROLE_IN_ORG) {
     var role = String(step.targetRole || '').trim();
     if (!role) return null;
-    emails = wfUniqueEmails_(wfFilterByOrg_(employees, office, department).filter(function(e) {
-      return employeeHasRole_(e, role);
-    }));
+    emails = wfUniqueEmails_(wfFilterByRoleOrg_(employees, office, department, role));
   } else if (type === WF_RESOLVE_WF_ADMIN) {
     emails = wfUniqueEmails_(wfFilterByOrg_(employees, office, department).filter(function(e) {
       return employeeHasRole_(e, WF_ADMIN_ROLE_NAME);
