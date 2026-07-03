@@ -7,6 +7,9 @@ var EMPLOYEE_MASTER_SHEET_NAME = '社員マスタ';
 var WORKFLOW_SS_ID = '19zhtLt23UOpysCpbwH9X-gom5ohVKbW2nARECDvCfIk';
 var APP_CODE = 'PURCHASE_REQUEST';
 
+/** 購買申請スプレッドシートID（Webアプリ実行時の openById 用） */
+var PURCHASE_SS_ID = '1kiMCCvKu3-Iu4nACJ6BCegvbNoLemgZ1HuJ_-1QoxDg';
+
 /** 申請ポータルのWebアプリURL（戻る導線用） */
 var PORTAL_URL = 'https://script.google.com/macros/s/AKfycbwLx0zRZApqzd9d3Np8HhMQJzOzp1L_TSvL4xiL_Svrwiguyuk1oLQAcAlSX8F3OGc8/exec';
 
@@ -25,7 +28,20 @@ var SHEET_SUPPLIER_MASTER = '購入先マスタ';
 var SHEET_MAKER_MASTER = 'メーカーマスタ';
 var SHEET_UNREGISTERED_MASTER_CANDIDATES = '未登録マスタ候補';
 var SHEET_HISTORY = '承認履歴';
+var SHEET_RECURRING = '定期購買設定';
+var SHEET_RECURRING_DETAILS = '定期購買明細';
 var MASTER_CACHE_TTL_SEC = 600;
+
+var RECURRING_STATUS = {
+  ACTIVE: '有効',
+  STOPPED: '停止'
+};
+
+var DEFAULT_RECURRING_DESIRED_OFFSET_DAYS = 7;
+var RECURRING_RUN_HOUR_JST = 7;
+
+/** WebアプリURL（通知・深リンク用。デプロイ後に cursorデプロイコマンド.txt と同期） */
+var PURCHASE_WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbz6_wkmOhXz2JsEhjgfeDyaDoHNEZNFUrPoIIpBfFDmjKkbTT9IKeR0pwsIHSZ5dRu7kw/exec';
 
 var PURCHASE_MASTER_STATUS = {
   REGISTERED: '登録済',
@@ -65,6 +81,21 @@ function generatePurchaseRequestId_() {
   var prefix = Utilities.formatDate(new Date(), tz, 'yyyyMMdd');
   var rand = Math.floor(Math.random() * 9000) + 1000;
   return 'PR-' + prefix + '-' + rand;
+}
+
+function generateRecurringId_() {
+  var tz = Session.getScriptTimeZone();
+  var prefix = Utilities.formatDate(new Date(), tz, 'yyyyMMdd');
+  var rand = Math.floor(Math.random() * 9000) + 1000;
+  return 'REC-' + prefix + '-' + rand;
+}
+
+function getPurchaseWebAppUrl_() {
+  try {
+    var url = ScriptApp.getService().getUrl();
+    if (url) return url;
+  } catch (e) { /* ignore */ }
+  return PURCHASE_WEB_APP_URL;
 }
 
 function getCurrentUserEmail_() {

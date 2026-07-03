@@ -64,6 +64,18 @@
     .hint, .submit-warning { font-size: 12px; color: #64748b; margin-bottom: 8px; }
     .submit-warning { color: #92400e; background: #fffbeb; padding: 10px 12px; border-radius: 6px; border: 1px solid #fcd34d; white-space: pre-wrap; display: none; }
     .badge-count { background: #ef4444; color: #fff; font-size: 10px; padding: 2px 6px; border-radius: 10px; margin-left: 4px; }
+    .status-有効 { background: #d1fae5; color: #065f46; }
+    .status-停止 { background: #e2e8f0; color: #64748b; }
+    .recurring-card { border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px; margin-bottom: 8px; background: #fff; }
+    .recurring-card.stopped { opacity: 0.75; background: #f8fafc; }
+    .recurring-head { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; margin-bottom: 6px; }
+    .recurring-title { font-weight: bold; font-size: 14px; }
+    .recurring-meta { font-size: 12px; color: #64748b; line-height: 1.5; }
+    .recurring-actions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+    .schedule-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 12px 0; }
+    @media (max-width: 600px) { .schedule-grid { grid-template-columns: 1fr; } }
+    .exchange-info { background: #fffbeb; border: 1px solid #fcd34d; border-radius: 6px; padding: 10px 12px; font-size: 13px; line-height: 1.6; }
+    .exchange-info strong { color: #92400e; }
   </style>
 </head>
 <body>
@@ -80,6 +92,7 @@
 
 <div class="tabs">
   <button class="tab-btn active" data-tab="form">新規申請</button>
+  <button class="tab-btn" data-tab="recurring">定期申請</button>
 </div>
 
 <div id="panel-form" class="panel active">
@@ -92,7 +105,14 @@
   <div class="form-grid">
     <div class="field"><label>希望納期</label><input type="date" id="desiredDate"></div>
     <div class="field"><label>購入先</label><input type="text" id="supplier" list="supplierCandidates" placeholder="候補から選択または入力"></div>
-    <div class="field"><label>合計金額（円）</label><input type="number" id="totalAmount" min="0" placeholder="0"></div>
+    <div class="field"><label>通貨</label><select id="currencyCode" onchange="onCurrencyChange()"></select></div>
+    <div class="field"><label id="totalAmountLabel">合計金額（円）</label><input type="number" id="totalAmount" min="0" placeholder="0" readonly></div>
+    <div class="field full" id="exchangeInfoPanel" style="display:none">
+      <div class="exchange-info">
+        <div id="exchangeRateText">為替レート: -</div>
+        <div id="estimatedJpyText"><strong>予想金額（円）:</strong> -</div>
+      </div>
+    </div>
     <div class="field"><label>予算区分</label><input type="text" id="budgetCategory" placeholder="例：消耗品費"></div>
     <div class="field"><label>支払方法</label><input type="text" id="paymentMethod" placeholder="例：請求書払い"></div>
     <div class="field full"><label>購買目的</label><input type="text" id="purpose" placeholder="例：設備修理のため"></div>
@@ -112,9 +132,15 @@
   <div class="btn-row">
     <button class="btn btn-secondary" onclick="saveDraft()">下書き保存</button>
     <button class="btn btn-primary" onclick="submitPurchase()">申請する</button>
+    <button class="btn btn-secondary" onclick="openRecurringRegisterModal('form')">この内容を定期申請に登録</button>
     <button class="btn btn-danger btn-sm" id="btnDelete" style="display:none" onclick="deletePurchase()">下書き削除</button>
   </div>
   <input type="hidden" id="editPurchaseId" value="">
+</div>
+
+<div id="panel-recurring" class="panel">
+  <p class="hint">毎月指定日に自動で購買申請（申請中）を作成します。不要になったら停止してください。</p>
+  <div id="recurringList"></div>
 </div>
 
 <div id="detailModal" class="modal-overlay" onclick="if(event.target===this)closeModal()">
@@ -126,10 +152,37 @@
   </div>
 </div>
 
+<div id="recurringModal" class="modal-overlay" onclick="if(event.target===this)closeRecurringModal()">
+  <div class="modal">
+    <h3 id="recurringModalTitle">定期申請に登録</h3>
+    <p class="hint" id="recurringModalHint">毎月自動で購買申請を提出します（申請中）。</p>
+    <div class="schedule-grid">
+      <div class="field">
+        <label>毎月実行日（1〜28日）</label>
+        <input type="number" id="recurringRunDay" min="1" max="28" value="1">
+      </div>
+      <div class="field">
+        <label>希望納期オフセット（日）</label>
+        <input type="number" id="recurringOffsetDays" min="0" max="90" value="7">
+      </div>
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-secondary" style="flex:1" onclick="closeRecurringModal()">キャンセル</button>
+      <button class="btn btn-primary" style="flex:1" onclick="submitRecurringRegister()">登録する</button>
+    </div>
+  </div>
+</div>
+
 <script>
   var PORTAL_URL = '<?= portalUrl ?>';
   var BOOT_REQUEST_ID = '<?= requestId ?>';
   var appData = null, currentPurchase = null;
+  var recurringRegisterMode = '';
+  var recurringRegisterPurchaseId = '';
+  var recurringWebAppUrl = '';
+  var currentExchangeRate = 1;
+  var currentExchangeRateDate = '';
+  var currencyOptions = [];
 
   document.addEventListener('DOMContentLoaded', function() {
     google.script.run.withSuccessHandler(onBootstrap).withFailureHandler(onError).getBootstrapAppData();
@@ -141,6 +194,7 @@
     document.getElementById('userInfo').textContent = (data.employee ? data.employee.name + ' / ' : '') + (data.userEmail || '');
     bindTabs();
     setupWorkflowRoutes(data.workflowRoutes, data.workflowLinked);
+    setupCurrencies(data.currencies || []);
     setupPurchaseMasterCandidates(data.purchaseMasters);
     resetForm();
     loadSubmitReadiness();
@@ -155,8 +209,123 @@
         document.querySelectorAll('.panel').forEach(function(p) { p.classList.remove('active'); });
         btn.classList.add('active');
         document.getElementById('panel-' + tab).classList.add('active');
+        if (tab === 'recurring') loadRecurringTemplates();
       };
     });
+  }
+
+  function loadRecurringTemplates() {
+    var host = document.getElementById('recurringList');
+    if (!host) return;
+    host.innerHTML = '<div class="empty-msg">読み込み中...</div>';
+    google.script.run.withSuccessHandler(function(res) {
+      if (!res.success) {
+        host.innerHTML = '<div class="empty-msg">' + esc(res.message || '取得できません') + '</div>';
+        return;
+      }
+      recurringWebAppUrl = res.webAppUrl || '';
+      renderRecurringList(res.templates || []);
+    }).withFailureHandler(function(err) {
+      host.innerHTML = '<div class="empty-msg">エラー: ' + esc(err.message || err) + '</div>';
+    }).getRecurringTemplatesApi();
+  }
+
+  function renderRecurringList(items) {
+    var host = document.getElementById('recurringList');
+    if (!items.length) {
+      host.innerHTML = '<div class="empty-msg">登録された定期購買はありません</div>';
+      return;
+    }
+    host.innerHTML = items.map(function(item) {
+      var stopped = item.status === '停止';
+      var lastLink = item.lastGeneratedPurchaseRequestId
+        ? ' <a href="' + esc(buildPurchaseUrl(item.lastGeneratedPurchaseRequestId)) + '" target="_blank" rel="noopener noreferrer">' +
+          esc(item.lastGeneratedPurchaseRequestId) + '</a>'
+        : ' -';
+      return '<div class="recurring-card' + (stopped ? ' stopped' : '') + '">' +
+        '<div class="recurring-head">' +
+        '<div class="recurring-title">' + esc(item.summaryLabel || item.recurringId) + '</div>' +
+        '<span class="status-badge status-' + esc(item.status) + '">' + esc(item.status) + '</span></div>' +
+        '<div class="recurring-meta">' +
+        '定期ID: ' + esc(item.recurringId) + '<br>' +
+        '毎月 ' + esc(item.runDayOfMonth) + ' 日実行 / 希望納期 +' + esc(item.desiredDateOffsetDays) + ' 日<br>' +
+        '最終実行: ' + esc(item.lastRunDate || '-') + ' / 最終申請: ' + lastLink +
+        (item.sourcePurchaseRequestId ? '<br>元申請: ' + esc(item.sourcePurchaseRequestId) : '') +
+        '</div><div class="recurring-actions">' +
+        (stopped
+          ? '<button class="btn btn-success btn-sm" onclick="resumeRecurring(\'' + escAttr(item.recurringId) + '\')">再開</button>'
+          : '<button class="btn btn-danger btn-sm" onclick="stopRecurring(\'' + escAttr(item.recurringId) + '\')">停止</button>') +
+        '</div></div>';
+    }).join('');
+  }
+
+  function buildPurchaseUrl(requestId) {
+    var base = recurringWebAppUrl || window.location.href.split('?')[0];
+    return base + (base.indexOf('?') >= 0 ? '&' : '?') + 'requestId=' + encodeURIComponent(requestId);
+  }
+
+  function stopRecurring(recurringId) {
+    if (!confirm('この定期購買を停止しますか？\n以降、自動申請は作成されません。')) return;
+    showLoading(true);
+    google.script.run.withSuccessHandler(function(res) {
+      showLoading(false);
+      toast(res.message, !res.success, res.success);
+      if (res.success) loadRecurringTemplates();
+    }).withFailureHandler(onError).stopRecurringTemplateApi(recurringId);
+  }
+
+  function resumeRecurring(recurringId) {
+    if (!confirm('この定期購買を再開しますか？')) return;
+    showLoading(true);
+    google.script.run.withSuccessHandler(function(res) {
+      showLoading(false);
+      toast(res.message, !res.success, res.success);
+      if (res.success) loadRecurringTemplates();
+    }).withFailureHandler(onError).resumeRecurringTemplateApi(recurringId);
+  }
+
+  function openRecurringRegisterModal(mode, purchaseId) {
+    recurringRegisterMode = mode || 'form';
+    recurringRegisterPurchaseId = purchaseId || '';
+    document.getElementById('recurringRunDay').value = '1';
+    document.getElementById('recurringOffsetDays').value = '7';
+    document.getElementById('recurringModalTitle').textContent =
+      mode === 'purchase' ? '承認済み申請を定期化' : '定期申請に登録';
+    document.getElementById('recurringModal').classList.add('show');
+  }
+
+  function closeRecurringModal() {
+    document.getElementById('recurringModal').classList.remove('show');
+    recurringRegisterMode = '';
+    recurringRegisterPurchaseId = '';
+  }
+
+  function collectRecurringSchedule() {
+    return {
+      runDayOfMonth: document.getElementById('recurringRunDay').value,
+      desiredDateOffsetDays: document.getElementById('recurringOffsetDays').value
+    };
+  }
+
+  function submitRecurringRegister() {
+    var schedule = collectRecurringSchedule();
+    showLoading(true);
+    if (recurringRegisterMode === 'purchase') {
+      google.script.run.withSuccessHandler(afterRecurringRegister).withFailureHandler(onError)
+        .saveRecurringTemplateFromPurchaseApi(recurringRegisterPurchaseId, schedule);
+      return;
+    }
+    google.script.run.withSuccessHandler(afterRecurringRegister).withFailureHandler(onError)
+      .saveRecurringTemplateFromFormApi(collectPayload(), schedule);
+  }
+
+  function afterRecurringRegister(res) {
+    showLoading(false);
+    closeRecurringModal();
+    toast(res.message, !res.success, res.success);
+    if (res.success) {
+      document.querySelector('[data-tab="recurring"]').click();
+    }
   }
 
   function setupWorkflowRoutes(routes, linked) {
@@ -199,6 +368,112 @@
   }
 
 
+  function setupCurrencies(options) {
+    currencyOptions = options.length ? options : [{ code: 'JPY', label: '日本円', symbol: '¥' }];
+    var sel = document.getElementById('currencyCode');
+    sel.innerHTML = currencyOptions.map(function(c) {
+      return '<option value="' + escAttr(c.code) + '">' + esc(c.label) + ' (' + esc(c.symbol) + ')</option>';
+    }).join('');
+    sel.value = 'JPY';
+    onCurrencyChange();
+  }
+
+  function getCurrencyMeta(code) {
+    code = code || 'JPY';
+    for (var i = 0; i < currencyOptions.length; i++) {
+      if (currencyOptions[i].code === code) return currencyOptions[i];
+    }
+    return { code: 'JPY', label: '日本円', symbol: '¥' };
+  }
+
+  function onCurrencyChange() {
+    var code = document.getElementById('currencyCode').value || 'JPY';
+    updateAmountLabels(code);
+    updateDetailInputSteps(code);
+    if (code === 'JPY') {
+      currentExchangeRate = 1;
+      currentExchangeRateDate = '';
+      document.getElementById('exchangeInfoPanel').style.display = 'none';
+      updateEstimatedJpy();
+      return;
+    }
+    document.getElementById('exchangeInfoPanel').style.display = '';
+    document.getElementById('exchangeRateText').textContent = '為替レート取得中...';
+    document.getElementById('estimatedJpyText').innerHTML = '<strong>予想金額（円）:</strong> 計算中...';
+    google.script.run.withSuccessHandler(function(res) {
+      if (!res || !res.success) {
+        currentExchangeRate = 0;
+        var msg = (res && res.message) ? res.message : '為替レートを取得できません';
+        document.getElementById('exchangeRateText').textContent = msg;
+        document.getElementById('exchangeRateText').style.whiteSpace = 'pre-wrap';
+        if (res && res.needsAuthorization) {
+          document.getElementById('estimatedJpyText').innerHTML =
+            '<strong>予想金額（円）:</strong> 為替レート取得後に表示されます';
+        } else {
+          updateEstimatedJpy();
+        }
+        return;
+      }
+      currentExchangeRate = res.rate;
+      currentExchangeRateDate = res.rateDate || '';
+      var datePart = res.rateDate ? '（' + res.rateDate + ' 時点）' : '';
+      document.getElementById('exchangeRateText').textContent =
+        '申請時点の為替: 1 ' + code + ' = ' + Number(res.rate).toLocaleString('ja-JP') + ' 円' + datePart;
+      updateEstimatedJpy();
+    }).withFailureHandler(function() {
+      currentExchangeRate = 0;
+      document.getElementById('exchangeRateText').textContent = '為替レートを取得できません';
+      updateEstimatedJpy();
+    }).getExchangeRateApi(code);
+  }
+
+  function updateAmountLabels(code) {
+    var meta = getCurrencyMeta(code);
+    document.getElementById('totalAmountLabel').textContent =
+      code === 'JPY' ? '合計金額（円）' : '合計金額（' + meta.label + '）';
+  }
+
+  function updateDetailInputSteps(code) {
+    var step = code === 'JPY' ? '1' : '0.01';
+    document.querySelectorAll('.detail-unit-price').forEach(function(el) { el.step = step; });
+  }
+
+  function updateEstimatedJpy() {
+    var total = Number(document.getElementById('totalAmount').value || 0);
+    var code = document.getElementById('currencyCode').value || 'JPY';
+    if (code === 'JPY') return;
+    var jpy = currentExchangeRate > 0 ? Math.round(total * currentExchangeRate) : 0;
+    document.getElementById('estimatedJpyText').innerHTML =
+      '<strong>予想金額（円）:</strong> ' + jpy.toLocaleString('ja-JP') + ' 円';
+  }
+
+  function formatPurchaseAmount(amount, currency) {
+    currency = currency || 'JPY';
+    var meta = getCurrencyMeta(currency);
+    var val = Number(amount || 0);
+    if (currency === 'JPY') return val.toLocaleString('ja-JP') + ' 円';
+    return meta.symbol + val.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) +
+      '（' + meta.label + '）';
+  }
+
+  function formatPurchaseListAmount(p) {
+    var currency = p.currency || 'JPY';
+    if (currency === 'JPY') return Number(p.totalAmount || 0).toLocaleString('ja-JP') + '円';
+    var main = formatPurchaseAmount(p.totalAmount, currency);
+    var jpy = Number(p.estimatedJpyAmount || 0);
+    return main + ' / 予想 ' + jpy.toLocaleString('ja-JP') + '円';
+  }
+
+  function buildAmountDetailRows(p) {
+    var currency = p.currency || 'JPY';
+    var html = row('合計', formatPurchaseAmount(p.totalAmount, currency));
+    if (currency !== 'JPY') {
+      html += row('為替レート', '1 ' + currency + ' = ' + Number(p.exchangeRate || 0).toLocaleString('ja-JP') + ' 円');
+      html += row('予想金額（円）', Number(p.estimatedJpyAmount || 0).toLocaleString('ja-JP') + ' 円');
+    }
+    return html;
+  }
+
   function recalcTotal() {
     var total = 0;
     document.querySelectorAll('.line-card').forEach(function(card) {
@@ -209,6 +484,7 @@
       total += amount;
     });
     document.getElementById('totalAmount').value = total;
+    updateEstimatedJpy();
   }
 
   function addDetailLine(detail, afterCard) {
@@ -250,6 +526,7 @@
       recalcTotal();
     };
     recalcTotal();
+    updateDetailInputSteps(document.getElementById('currencyCode').value || 'JPY');
     if (detail.modelNumber) lookupModelHistory(card);
   }
 
@@ -309,6 +586,9 @@
       desiredDate: document.getElementById('desiredDate').value,
       supplier: document.getElementById('supplier').value,
       totalAmount: document.getElementById('totalAmount').value,
+      currency: document.getElementById('currencyCode').value || 'JPY',
+      exchangeRate: currentExchangeRate,
+      exchangeRateDate: currentExchangeRateDate,
       purpose: document.getElementById('purpose').value,
       budgetCategory: document.getElementById('budgetCategory').value,
       paymentMethod: document.getElementById('paymentMethod').value,
@@ -346,6 +626,10 @@
     ['supplier','totalAmount','purpose','budgetCategory','paymentMethod','note'].forEach(function(id) {
       document.getElementById(id).value = '';
     });
+    document.getElementById('currencyCode').value = 'JPY';
+    currentExchangeRate = 1;
+    currentExchangeRateDate = '';
+    onCurrencyChange();
     document.getElementById('desiredDate').value = new Date().toISOString().slice(0, 10);
     document.getElementById('detailLines').innerHTML = '';
     addDetailLine();
@@ -360,7 +644,7 @@
       return '<div class="item-card" data-id="' + escAttr(p.purchaseRequestId) + '" data-mode="' + escAttr(mode) + '">' +
         '<div><strong>' + esc(p.itemName) + '</strong> <span class="status-badge status-' + esc(p.status) + '">' + esc(p.status) + '</span>' + masterBadge + '</div>' +
         '<div style="font-size:12px;color:#64748b;margin-top:4px">' + esc(p.purchaseRequestId) + ' / 希望納期 ' + esc(p.desiredDate) +
-        ' / ' + Number(p.totalAmount || 0).toLocaleString() + '円</div></div>';
+        ' / ' + formatPurchaseListAmount(p) + '</div></div>';
     }).join('');
     el.querySelectorAll('.item-card').forEach(function(card) {
       card.onclick = function() {
@@ -383,18 +667,19 @@
     document.getElementById('modalTitle').textContent = p.purchaseRequestId;
     var detailsHtml = '';
     if (p.details && p.details.length) {
+      var currency = p.currency || 'JPY';
       detailsHtml = '<div class="section-title" style="margin-top:12px">購買明細</div><table class="detail-table">' +
         '<tr><th>メーカー</th><th>品番</th><th>品名</th><th>数量</th><th>金額</th></tr>' +
         p.details.map(function(d) {
           return '<tr><td>' + esc(d.maker || '-') + '</td><td>' + esc(d.modelNumber || '-') + '</td><td>' + esc(d.itemName || '-') +
-            '</td><td>' + esc(d.quantity || 0) + '</td><td>' + Number(d.amount || 0).toLocaleString() + ' 円</td></tr>';
+            '</td><td>' + esc(d.quantity || 0) + '</td><td>' + formatPurchaseAmount(d.amount, currency) + '</td></tr>';
         }).join('') + '</table>';
     }
     document.getElementById('modalBody').innerHTML = '<table class="detail-table">' +
       row('ステータス', p.status) + row('申請者', p.applicantName + ' (' + p.applicantEmail + ')') +
       row('マスタ登録状態', p.masterStatus || '登録済') +
       row('希望納期', p.desiredDate) + row('購入先', p.supplier || '-') + row('品名', p.itemName) +
-      row('合計', Number(p.totalAmount || 0).toLocaleString() + ' 円') + row('目的', p.purpose) +
+      buildAmountDetailRows(p) + row('目的', p.purpose) +
       row('予算区分', p.budgetCategory || '-') + row('支払方法', p.paymentMethod || '-') + row('備考', p.note || '-') + '</table>' + detailsHtml;
     var actions = document.getElementById('modalActions');
     actions.innerHTML = '';
@@ -405,6 +690,10 @@
     if (mode === 'mine' && (p.status === '下書き' || p.status === '差戻し')) {
       actions.innerHTML += '<button class="btn btn-secondary" style="flex:1" onclick="loadToForm()">編集</button>';
     }
+    if (mode === 'mine' && p.status === '承認済' && appData && appData.userEmail === p.applicantEmail) {
+      actions.innerHTML += '<button class="btn btn-primary" style="flex:1" onclick="openRecurringRegisterModal(\'purchase\', \'' +
+        escAttr(p.purchaseRequestId) + '\')">定期申請に登録</button>';
+    }
     document.getElementById('detailModal').classList.add('show');
   }
 
@@ -414,6 +703,12 @@
     document.getElementById('editPurchaseId').value = p.purchaseRequestId;
     document.getElementById('desiredDate').value = p.desiredDate;
     document.getElementById('supplier').value = p.supplier;
+    document.getElementById('currencyCode').value = p.currency || 'JPY';
+    if (p.currency && p.currency !== 'JPY' && p.exchangeRate) {
+      currentExchangeRate = p.exchangeRate;
+      currentExchangeRateDate = '';
+    }
+    onCurrencyChange();
     document.getElementById('totalAmount').value = p.totalAmount;
     document.getElementById('purpose').value = p.purpose;
     document.getElementById('budgetCategory').value = p.budgetCategory;

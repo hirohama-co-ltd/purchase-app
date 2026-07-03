@@ -129,6 +129,35 @@ function readUnregisteredMasterCandidates_(filterFn) {
   return rows;
 }
 
+function findUnregisteredCandidateRow_(sheet, candidateId) {
+  var lastRow = sheet.getLastRow();
+  if (lastRow < 2) return -1;
+  var ids = sheet.getRange(2, 1, lastRow, 1).getValues();
+  candidateId = String(candidateId || '').trim();
+  for (var i = 0; i < ids.length; i++) {
+    if (String(ids[i][0] || '').trim() === candidateId) return i + 2;
+  }
+  return -1;
+}
+
+function writeUnregisteredMasterCandidateRow_(row) {
+  var sheet = getUnregisteredMasterCandidateSheet_();
+  ensureHeaderRowByValues_(sheet, UNREGISTERED_MASTER_HEADERS);
+  var values = [
+    row.candidateId, row.type, row.inputName, row.officialName || '', row.code || '', row.aliases || '',
+    row.status || '未登録', row.purchaseRequestId || '', row.lineNo || 0, row.updatedAt || '',
+    row.registeredAt || '', row.processedBy || ''
+  ];
+  var rowIndex = findUnregisteredCandidateRow_(sheet, row.candidateId);
+  if (rowIndex <= 0) {
+    sheet.appendRow(values);
+    return;
+  }
+  values.forEach(function(val, index) {
+    sheet.getRange(rowIndex, index + 1).setValue(val);
+  });
+}
+
 function writeAllUnregisteredMasterCandidates_(rows) {
   var sheet = getUnregisteredMasterCandidateSheet_();
   sheet.getRange(1, 1, 1, UNREGISTERED_MASTER_HEADERS.length).setValues([UNREGISTERED_MASTER_HEADERS]);
@@ -144,7 +173,7 @@ function writeAllUnregisteredMasterCandidates_(rows) {
     ];
   });
   if (sheet.getLastRow() > 1) sheet.deleteRows(2, sheet.getLastRow() - 1);
-  sheet.getRange(2, 1, values.length, UNREGISTERED_MASTER_HEADERS.length).setValues(values);
+  writeDataRows_(sheet, 2, values, UNREGISTERED_MASTER_HEADERS.length);
 }
 
 function recordUnregisteredMasterCandidates_(purchaseRequestId, pendingItems) {
@@ -182,7 +211,15 @@ function recordUnregisteredMasterCandidates_(purchaseRequestId, pendingItems) {
     }
   });
 
-  writeAllUnregisteredMasterCandidates_(Object.keys(map).map(function(k) { return map[k]; }));
+  Object.keys(currentIds).forEach(function(id) {
+    writeUnregisteredMasterCandidateRow_(map[id]);
+  });
+  Object.keys(map).forEach(function(id) {
+    var row = map[id];
+    if (row.purchaseRequestId === purchaseRequestId && row.status === '不要') {
+      writeUnregisteredMasterCandidateRow_(row);
+    }
+  });
 }
 
 function countOpenUnregisteredCandidates_(purchaseRequestId) {
