@@ -13,7 +13,9 @@ function initializeSpreadsheet(options) {
     { name: SHEET_SUPPLIER_MASTER, headers: PURCHASE_MASTER_HEADERS, tabColor: '#bbf7d0' },
     { name: SHEET_MAKER_MASTER, headers: PURCHASE_MASTER_HEADERS, tabColor: '#bfdbfe' },
     { name: SHEET_UNREGISTERED_MASTER_CANDIDATES, headers: UNREGISTERED_MASTER_HEADERS, tabColor: '#fecaca' },
-    { name: SHEET_HISTORY, headers: HISTORY_HEADERS, tabColor: '#e9d5ff' }
+    { name: SHEET_HISTORY, headers: HISTORY_HEADERS, tabColor: '#e9d5ff' },
+    { name: SHEET_RECURRING, headers: RECURRING_HEADERS, tabColor: '#ddd6fe' },
+    { name: SHEET_RECURRING_DETAILS, headers: RECURRING_DETAIL_HEADERS, tabColor: '#e9d5ff' }
   ];
 
   specs.forEach(function(spec, index) {
@@ -35,6 +37,7 @@ function initializeSpreadsheet(options) {
   msg += '1. ワークフロー設定で APP_CODE「' + APP_CODE + '」を経路に紐づけ\n';
   msg += '2. Webアプリとしてデプロイ\n';
   msg += '3. 申請ポータルの「ポータル連携」にこのアプリを登録（dataType: purchase）\n';
+  msg += '4. Apps Script エディタで installRecurringPurchaseTrigger を実行（定期申請）\n';
   return msg;
 }
 
@@ -89,6 +92,7 @@ function writeSetupGuideSheet_(ss, forceRewrite) {
     ['4', '申請ポータルのポータル連携で dataType「purchase」として登録'],
     ['5', '購入先マスタ・メーカーマスタに候補を登録（コード / 表示名 / 別名 / 有効）'],
     ['6', '未登録マスタ候補は、正式表示名 / コード / 別名を入力してメニュー「未登録マスタを正式登録」を実行'],
+    ['7', 'Apps Script エディタで installRecurringPurchaseTrigger を実行（毎月自動申請）'],
     [],
     ['マスタ別名の例', '表示名: 三菱電機 / 別名: 三菱,MITSUBISHI,ミツビシ'],
     [],
@@ -108,7 +112,32 @@ function onOpen() {
     .addItem('全シート＋ヘッダーを一括作成', 'menuInitializeSpreadsheet')
     .addSeparator()
     .addItem('未登録マスタを正式登録', 'menuRegisterPendingPurchaseMasters')
+    .addSeparator()
+    .addItem('為替レート取得を確認', 'menuAuthorizeExchangeRateAccess')
+    .addItem('定期申請トリガーを設定', 'menuInstallRecurringPurchaseTrigger')
     .addToUi();
+}
+
+function menuAuthorizeExchangeRateAccess() {
+  var ui = SpreadsheetApp.getUi();
+  var result = authorizeExchangeRateAccess();
+  if (result.success) {
+    ui.alert('確認完了',
+      '為替レートを取得できました。\n例: 1 USD = ' + Number(result.rate || 0).toLocaleString('ja-JP') + ' 円',
+      ui.ButtonSet.OK);
+    return;
+  }
+  ui.alert('為替レート取得',
+    result.message || '為替レートの取得に失敗しました。',
+    ui.ButtonSet.OK);
+}
+
+function menuInstallRecurringPurchaseTrigger() {
+  var ui = SpreadsheetApp.getUi();
+  if (ui.alert('定期申請トリガー', '毎日 7:00 JST に定期購買の自動申請チェックを実行するトリガーを設定します。よろしいですか？', ui.ButtonSet.YES_NO) !== ui.Button.YES) {
+    return;
+  }
+  ui.alert('完了', installRecurringPurchaseTrigger(), ui.ButtonSet.OK);
 }
 
 function menuInitializeSpreadsheet() {

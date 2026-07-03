@@ -32,10 +32,24 @@ Web URL: デプロイURL
 
 【更新】
 clasp push
-clasp deploy -i AKfycbz6_wkmOhXz2JsEhjgfeDyaDoHNEZNFUrPoIIpBfFDmjKkbTT9IKeR0pwsIHSZ5dRu7kw -d "変更内容"
+clasp deploy -i AKfycbz6_wkmOhXz2JsEhjgfeDyaDoHNEZNFUrPoIIpBfFDmjKkbTT9IKeR0pwsIHSZ5dRu7kw -d "外貨対応・為替レート・予想円換算"
+
+【外貨対応 初回セットアップ】
+1. スプレッドシート → メニュー「購買申請」→「全シート＋ヘッダーを一括作成」
+   ※ 通貨 / 為替レート / 予想円換算 列が追加されます
+2. 為替レートは GOOGLEFINANCE で取得（外部API権限不要）
+3. 外貨選択時に為替レート・予想円換算が表示されることを確認
+
+【定期購買（毎月自動申請）初回セットアップ】
+1. スプレッドシート → メニュー「購買申請」→「全シート＋ヘッダーを一括作成」
+   ※ 定期購買設定 / 定期購買明細 シートが追加されます
+2. Apps Script エディタ → installRecurringPurchaseTrigger 実行
+   ※ 毎日 7:00 JST に runRecurringPurchaseJobs が動きます
+3. clasp push + 再デプロイ後、Mail スコープの再承認
+4. Web UI「定期申請」タブで登録・停止を確認
 
 【作成済み情報】
 スプレッドシートID: 1kiMCCvKu3-Iu4nACJ6BCegvbNoLemgZ1HuJ_-1QoxDg
 Script ID: 1A-537L7DX-jFoDgghT8cc0RFxpFCgtuWsaOkmovwojfkfAkx518LiJ-p
-デプロイID: AKfycbz6_wkmOhXz2JsEhjgfeDyaDoHNEZNFUrPoIIpBfFDmjKkbTT9IKeR0pwsIHSZ5dRu7kw（@14）
+デプロイID: AKfycbz6_wkmOhXz2JsEhjgfeDyaDoHNEZNFUrPoIIpBfFDmjKkbTT9IKeR0pwsIHSZ5dRu7kw（@20）
 WebアプリURL: https://script.google.com/macros/s/AKfycbz6_wkmOhXz2JsEhjgfeDyaDoHNEZNFUrPoIIpBfFDmjKkbTT9IKeR0pwsIHSZ5dRu7kw/exec

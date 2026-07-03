@@ -7,7 +7,8 @@ function validatePurchasePayload_(payload, isSubmit) {
   if (!payload.desiredDate) errors.push('希望納期を入力してください');
   if (!String(payload.supplier || '').trim()) errors.push('購入先を入力してください');
   if (!String(payload.purpose || '').trim()) errors.push('購買目的を入力してください');
-  var details = normalizePurchaseDetails_(payload.details);
+  var currency = normalizeCurrencyCode_(payload.currency);
+  var details = normalizePurchaseDetails_(payload.details, currency);
   if (!details.length) {
     errors.push('購買明細を1件以上入力してください');
   } else {
@@ -21,17 +22,20 @@ function validatePurchasePayload_(payload, isSubmit) {
   return errors;
 }
 
-function normalizePurchaseDetails_(details) {
+function normalizePurchaseDetails_(details, currency) {
+  currency = normalizeCurrencyCode_(currency || DEFAULT_PURCHASE_CURRENCY);
   return (details || []).map(function(d) {
     var quantity = normalizeAmount(d.quantity);
-    var unitPrice = normalizeAmount(d.unitPrice);
+    var unitPrice = normalizeCurrencyAmount_(d.unitPrice, currency);
+    var amount = normalizeCurrencyAmount_(d.amount, currency);
+    if (!amount) amount = normalizeCurrencyAmount_(quantity * unitPrice, currency);
     return {
       maker: String(d.maker || '').trim(),
       modelNumber: String(d.modelNumber || '').trim(),
       itemName: String(d.itemName || '').trim(),
       quantity: quantity,
       unitPrice: unitPrice,
-      amount: quantity * unitPrice,
+      amount: amount,
       note: String(d.note || '').trim()
     };
   }).filter(function(d) {
@@ -71,13 +75,20 @@ function summarizePurchaseItems_(details) {
 }
 
 function savePurchaseRequest(payload, submit) {
+  return savePurchaseRequestCore_(payload, submit, {});
+}
+
+function savePurchaseRequestCore_(payload, submit, options) {
+  options = options || {};
   payload = payload || {};
-  var userEmail = getCurrentUserEmail_();
-  if (!userEmail) return { success: false, message: 'ログインユーザーを取得できません。' };
+  var userEmail = String(options.actorEmail || getCurrentUserEmail_() || '').trim().toLowerCase();
+  if (!userEmail) return { success: false, message: '申請者Emailを取得できません。' };
 
   var employee = findEmployeeByEmail(userEmail);
   var isSubmit = submit === true;
-  if (isSubmit && !employee) return { success: false, message: '共通マスタの社員マスタに登録されていません。' };
+  if (isSubmit && !employee) {
+    return { success: false, message: '共通マスタの社員マスタに登録されていません（' + userEmail + '）。' };
+  }
 
   var nameResult = normalizePurchasePayloadNames_(payload);
   if (nameResult.errors.length > 0) return { success: false, message: nameResult.errors.join('\n') };
@@ -88,7 +99,9 @@ function savePurchaseRequest(payload, submit) {
   var purchaseRequestId = String(payload.purchaseRequestId || '').trim() || generatePurchaseRequestId_();
   var existing = buildPurchaseRequest_(purchaseRequestId);
   if (existing) {
-    if (existing.applicantEmail !== userEmail) return { success: false, message: '他のユーザーの申請は編集できません。' };
+    if (!options.skipOwnershipCheck && existing.applicantEmail !== userEmail) {
+      return { success: false, message: '他のユーザーの申請は編集できません。' };
+    }
     if (existing.status !== PURCHASE_STATUS.DRAFT && existing.status !== PURCHASE_STATUS.REJECTED) {
       return { success: false, message: '現在のステータス（' + existing.status + '）では編集できません。' };
     }
@@ -102,8 +115,12 @@ function savePurchaseRequest(payload, submit) {
     : { success: true, routeId: existing ? existing.routeId : routeId, currentStep: 0, totalSteps: 0, currentStepName: '', approverEmail: '' };
   if (isSubmit && !wf.success) return { success: false, message: wf.message };
 
-  var details = normalizePurchaseDetails_(payload.details);
+  var currency = normalizeCurrencyCode_(payload.currency || (existing && existing.currency));
+  var details = normalizePurchaseDetails_(payload.details, currency);
   var totalAmount = details.reduce(function(sum, d) { return sum + d.amount; }, 0);
+  var currencyFields = resolvePurchaseCurrencyFields_(currency, totalAmount, payload, isSubmit, existing);
+  if (!currencyFields.success) return { success: false, message: currencyFields.message };
+
   var firstDetail = details[0] || {};
   var purchase = {
     purchaseRequestId: purchaseRequestId,
@@ -116,10 +133,13 @@ function savePurchaseRequest(payload, submit) {
     quantity: details.reduce(function(sum, d) { return sum + d.quantity; }, 0),
     unitPrice: firstDetail.unitPrice || 0,
     totalAmount: totalAmount,
+    currency: currencyFields.currency,
+    exchangeRate: currencyFields.exchangeRate,
+    estimatedJpyAmount: currencyFields.estimatedJpyAmount,
     purpose: String(payload.purpose || '').trim(),
     budgetCategory: String(payload.budgetCategory || '').trim(),
     paymentMethod: String(payload.paymentMethod || '').trim(),
-    note: String(payload.note || ''),
+    note: String(payload.note || '').trim(),
     masterStatus: nameResult.pending.length ? PURCHASE_MASTER_STATUS.PENDING : PURCHASE_MASTER_STATUS.REGISTERED,
     unregisteredMasterCount: nameResult.pending.length,
     status: isSubmit ? PURCHASE_STATUS.SUBMITTED : PURCHASE_STATUS.DRAFT,
@@ -130,13 +150,38 @@ function savePurchaseRequest(payload, submit) {
     routeId: isSubmit ? wf.routeId : (existing ? existing.routeId : routeId),
     currentStep: isSubmit ? wf.currentStep : (existing ? existing.currentStep : 0),
     totalSteps: isSubmit ? wf.totalSteps : (existing ? existing.totalSteps : 0),
-    currentStepName: isSubmit ? wf.currentStepName : (existing ? existing.currentStepName : '')
+    currentStepName: isSubmit ? wf.currentStepName : (existing ? existing.currentStepName : ''),
+    recurringId: String(options.recurringId || payload.recurringId || '').trim(),
+    autoGenerated: options.autoGenerated ? 'Y' : ''
   };
 
-  writePurchaseRow_(purchase);
-  writePurchaseDetails_(purchaseRequestId, details);
-  recordUnregisteredMasterCandidates_(purchaseRequestId, nameResult.pending);
-  appendHistory_(purchaseRequestId, isSubmit ? '申請' : '下書き保存', '');
+  try {
+    writePurchaseRow_(purchase);
+  } catch (e) {
+    Logger.log('writePurchaseRow_: ' + e.message);
+    return { success: false, message: '購買申請一覧の保存に失敗しました: ' + e.message };
+  }
+  try {
+    writePurchaseDetails_(purchaseRequestId, details);
+  } catch (e) {
+    Logger.log('writePurchaseDetails_: ' + e.message);
+    return { success: false, message: '購買明細の保存に失敗しました: ' + e.message };
+  }
+  try {
+    recordUnregisteredMasterCandidates_(purchaseRequestId, nameResult.pending);
+  } catch (e) {
+    Logger.log('recordUnregisteredMasterCandidates_: ' + e.message);
+    return { success: false, message: '未登録マスタ候補の保存に失敗しました: ' + e.message };
+  }
+
+  var historyAction = options.historyAction || (isSubmit ? '申請' : '下書き保存');
+  try {
+    appendHistory_(purchaseRequestId, historyAction, options.historyComment || '', userEmail);
+  } catch (e) {
+    Logger.log('appendHistory_: ' + e.message);
+    return { success: false, message: '承認履歴の保存に失敗しました: ' + e.message };
+  }
+
   return {
     success: true,
     purchaseRequestId: purchaseRequestId,

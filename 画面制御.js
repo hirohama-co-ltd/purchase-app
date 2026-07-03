@@ -35,7 +35,8 @@ function getBootstrapAppData() {
     workflowRoutes: getAvailableWorkflowRoutes(),
     workflowLinked: isWorkflowLinked_(),
     statusLabels: PURCHASE_STATUS,
-    purchaseMasters: getPurchaseMasterCandidates()
+    purchaseMasters: getPurchaseMasterCandidates(),
+    currencies: getPurchaseCurrencyOptions_()
   };
 }
 
